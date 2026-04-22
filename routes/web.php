@@ -7,6 +7,9 @@ use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\SpecialPmDashboardController;
+use App\Http\Controllers\StripeWebhookController;
+use App\Http\Controllers\SubTaskController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\CommentReactionController;
 use App\Http\Controllers\TaskCommentController;
@@ -28,6 +31,19 @@ Route::middleware(['auth'])->group(function () {
 
     // Client dedicated dashboard
     Route::get('/client/dashboard', [DashboardController::class, 'clientIndex'])->middleware('role:client')->name('client.dashboard');
+
+    // Special PM white-label dashboard + billing
+    Route::get('/special-pm/dashboard', [SpecialPmDashboardController::class, 'dashboard'])->middleware('role:special_pm')->name('special-pm.dashboard');
+    Route::get('/special-pm/billing', [SpecialPmDashboardController::class, 'billing'])->middleware('role:special_pm')->name('special-pm.billing');
+    Route::post('/special-pm/billing/checkout', [SpecialPmDashboardController::class, 'checkout'])->middleware('role:special_pm')->name('special-pm.billing.checkout');
+    Route::post('/special-pm/billing/refresh', [SpecialPmDashboardController::class, 'refreshSubscription'])->middleware('role:special_pm')->name('special-pm.billing.refresh');
+    Route::post('/special-pm/billing/deactivate', [SpecialPmDashboardController::class, 'deactivateSubscription'])->middleware('role:special_pm')->name('special-pm.billing.deactivate');
+    Route::get('/special-pm/billing/success', [SpecialPmDashboardController::class, 'success'])->middleware('role:special_pm')->name('special-pm.billing.success');
+    Route::get('/special-pm/settings', [SpecialPmDashboardController::class, 'settings'])->middleware('role:special_pm')->name('special-pm.settings');
+    Route::put('/special-pm/settings', [SpecialPmDashboardController::class, 'updateSettings'])->middleware('role:special_pm')->name('special-pm.settings.update');
+    Route::get('/special-pm/manage-dm', [SpecialPmDashboardController::class, 'manageDm'])->middleware('role:special_pm')->name('special-pm.manage-dm');
+    Route::post('/special-pm/manage-dm/invite', [SpecialPmDashboardController::class, 'inviteDm'])->middleware('role:special_pm')->name('special-pm.manage-dm.invite');
+    Route::delete('/special-pm/manage-dm/{user}', [SpecialPmDashboardController::class, 'destroyDm'])->middleware('role:special_pm')->name('special-pm.manage-dm.destroy');
 
     // Client projects (filtered to client_id)
     Route::get('/client/projects', [ProjectController::class, 'clientIndex'])->middleware('role:client')->name('client.projects');
@@ -97,6 +113,10 @@ Route::middleware(['auth'])->group(function () {
         [TaskController::class, 'taskCard']
     )->name('tasks.card');
 
+    Route::get('/projects/{project}/tasks/snapshot',
+        [TaskController::class, 'snapshot']
+    )->name('tasks.snapshot');
+
     /*
     |--------------------------------------------------------------------------
     | Task Comments
@@ -106,6 +126,22 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/tasks/{task}/comments',
         [TaskCommentController::class, 'store']
     )->name('tasks.comments.store');
+
+    Route::post('/tasks/{task}/subtasks',
+        [SubTaskController::class, 'store']
+    )->middleware('role:admin,pm,dm')->name('tasks.subtasks.store');
+
+    Route::post('/subtasks/{subTask}/approve',
+        [SubTaskController::class, 'approve']
+    )->middleware('role:client')->name('subtasks.approve');
+
+    Route::put('/subtasks/{subTask}',
+        [SubTaskController::class, 'update']
+    )->middleware('role:admin,pm,dm')->name('subtasks.update');
+
+    Route::delete('/subtasks/{subTask}',
+        [SubTaskController::class, 'destroy']
+    )->middleware('role:admin,pm')->name('subtasks.destroy');
 
     Route::get('/projects/{project}/comments/poll',
         [TaskCommentController::class, 'poll']
@@ -176,3 +212,11 @@ Route::middleware(['auth'])->group(function () {
 });
 
 require __DIR__.'/auth.php';
+
+Route::post('/stripe/webhook', [StripeWebhookController::class, 'handle'])
+    ->withoutMiddleware([\Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class])
+    ->name('stripe.webhook');
+
+Route::get('/special-pm/billing/dummy-activate/{user}', [SpecialPmDashboardController::class, 'dummyActivate'])
+    ->middleware('signed')
+    ->name('special-pm.billing.dummy-activate');

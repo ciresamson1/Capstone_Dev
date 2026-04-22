@@ -111,6 +111,9 @@
                         <p class="mt-1 text-sm text-slate-500">{{ $project->description }}</p>
                     @endif
                     <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                        <span class="inline-flex items-center rounded-full bg-slate-200 px-3 py-1 font-semibold text-slate-700">
+                            Project ID: {{ $project->unique_id ?? ('PRJ-' . str_pad((string) $project->id, 8, '0', STR_PAD_LEFT)) }}
+                        </span>
                         <span>{{ $project->start_date ? Carbon::parse($project->start_date)->format('M d, Y') : '—' }} → {{ $project->end_date ? Carbon::parse($project->end_date)->format('M d, Y') : '—' }}</span>
                         <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold
                             {{ $project->status === 'active' ? 'bg-emerald-100 text-emerald-700' : ($project->status === 'on_hold' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600') }}">
@@ -134,25 +137,25 @@
             <div class="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 <div class="rounded-3xl bg-white p-5 shadow-sm border border-slate-100">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Progress</p>
-                    <p class="mt-3 text-3xl font-bold {{ $percent >= 75 ? 'text-emerald-600' : ($percent >= 40 ? 'text-amber-600' : 'text-slate-900') }}">{{ $percent }}%</p>
+                    <p id="project-progress-value" class="mt-3 text-3xl font-bold {{ $percent >= 75 ? 'text-emerald-600' : ($percent >= 40 ? 'text-amber-600' : 'text-slate-900') }}">{{ $percent }}%</p>
                     <div class="mt-3 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                        <div class="h-2 rounded-full {{ $percent >= 75 ? 'bg-emerald-500' : ($percent >= 40 ? 'bg-amber-500' : 'bg-sky-500') }}" style="width:{{ $percent }}%"></div>
+                        <div id="project-progress-bar" class="h-2 rounded-full {{ $percent >= 75 ? 'bg-emerald-500' : ($percent >= 40 ? 'bg-amber-500' : 'bg-sky-500') }}" style="width:{{ $percent }}%"></div>
                     </div>
                 </div>
                 <div class="rounded-3xl bg-white p-5 shadow-sm border border-slate-100">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Total Tasks</p>
-                    <p class="mt-3 text-3xl font-bold text-slate-900">{{ $total }}</p>
-                    <p class="mt-1 text-xs text-slate-400">{{ $done }} completed</p>
+                    <p id="project-total-tasks" class="mt-3 text-3xl font-bold text-slate-900">{{ $total }}</p>
+                    <p id="project-completed-tasks" class="mt-1 text-xs text-slate-400">{{ $done }} completed</p>
                 </div>
                 <div class="rounded-3xl bg-white p-5 shadow-sm border border-slate-100">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">In Progress</p>
-                    <p class="mt-3 text-3xl font-bold text-sky-600">{{ $inProg }}</p>
+                    <p id="project-inprogress-tasks" class="mt-3 text-3xl font-bold text-sky-600">{{ $inProg }}</p>
                     <p class="mt-1 text-xs text-slate-400">active tasks</p>
                 </div>
                 <div class="rounded-3xl bg-white p-5 shadow-sm border border-slate-100">
                     <p class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Overdue</p>
-                    <p class="mt-3 text-3xl font-bold {{ $overdue > 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $overdue }}</p>
-                    <p class="mt-1 text-xs text-slate-400">{{ $overdue > 0 ? 'past due date' : 'all on track' }}</p>
+                    <p id="project-overdue-tasks" class="mt-3 text-3xl font-bold {{ $overdue > 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $overdue }}</p>
+                    <p id="project-overdue-caption" class="mt-1 text-xs text-slate-400">{{ $overdue > 0 ? 'past due date' : 'all on track' }}</p>
                 </div>
             </div>
 
@@ -212,6 +215,7 @@
                 <select name="role" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
                     <option value="admin">Admin</option>
                     <option value="pm">Project Manager</option>
+                    <option value="special_pm">Special PM</option>
                     <option value="dm">Digital Marketer</option>
                     <option value="client">Client</option>
                 </select>
@@ -295,10 +299,12 @@
     .bar-wrapper.bar-yellow .bar { fill: #f59e0b !important; }
     .bar-wrapper.bar-red    .bar { fill: #ef4444 !important; }
     .bar-wrapper.bar-grey   .bar { fill: #94a3b8 !important; }
+    .bar-wrapper.bar-orange .bar { fill: #f97316 !important; }
     svg .bar-green .bar { fill: #10b981 !important; }
     svg .bar-yellow .bar { fill: #f59e0b !important; }
     svg .bar-red    .bar { fill: #ef4444 !important; }
     svg .bar-grey   .bar { fill: #94a3b8 !important; }
+    svg .bar-orange .bar { fill: #f97316 !important; }
 </style>
 
 <script src="https://unpkg.com/frappe-gantt/dist/frappe-gantt.umd.js"></script>
@@ -333,9 +339,125 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let knownCommentIds      = {!! json_encode($commentIdsByTask) !!};
     let lastCommentTimestamp = '{{ $latestCommentTimestamp ? $latestCommentTimestamp->toISOString() : now()->toISOString() }}';
+    const currentUserId = Number(@json(auth()->id()));
+    const currentUserRole = @json(strtolower((string) auth()->user()->role));
+    const isClientRole = currentUserRole === 'client';
+    const canDeleteSubtaskFromComment = ['admin', 'pm'].includes(currentUserRole);
+    const dynamicMessagePlaceholder = isClientRole
+        ? 'Write a message...'
+        : 'Write a message... (/subtask or /edit-subtask)';
+    const dynamicReplyPlaceholder = isClientRole
+        ? 'Write a reply...'
+        : 'Write a reply... (/subtask or /edit-subtask)';
+    const todayIso = '{{ $today->toDateString() }}';
+
+    // ── Comment notification sound ───────────────────────────────────────
+    let commentAudioCtx = null;
+    let commentAudioUnlocked = false;
+
+    const ensureCommentAudioContext = () => {
+        if (commentAudioCtx) return commentAudioCtx;
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if (!Ctx) return null;
+        commentAudioCtx = new Ctx();
+        return commentAudioCtx;
+    };
+
+    const unlockCommentAudio = () => {
+        const ctx = ensureCommentAudioContext();
+        if (!ctx || commentAudioUnlocked) return;
+
+        const unlock = () => {
+            ctx.resume()
+                .then(() => {
+                    commentAudioUnlocked = ctx.state === 'running';
+                    if (!commentAudioUnlocked) return;
+
+                    document.removeEventListener('click', unlock);
+                    document.removeEventListener('keydown', unlock);
+                    document.removeEventListener('touchstart', unlock);
+                    document.removeEventListener('pointerdown', unlock);
+                })
+                .catch(() => {
+                    // Keep listeners so the next user gesture can unlock audio.
+                });
+        };
+
+        document.addEventListener('click', unlock, { once: true });
+        document.addEventListener('keydown', unlock, { once: true });
+        document.addEventListener('touchstart', unlock, { once: true });
+        document.addEventListener('pointerdown', unlock, { once: true });
+    };
+
+    const playAnnoyingCommentSoundPattern = () => {
+        const ctx = ensureCommentAudioContext();
+        if (!ctx || ctx.state !== 'running') return;
+
+        const start = ctx.currentTime + 0.01;
+        const pattern = [
+            { f: 1200, d: 0.09 },
+            { f: 1650, d: 0.08 },
+            { f: 1350, d: 0.09 },
+            { f: 1850, d: 0.08 },
+            { f: 1500, d: 0.1 },
+        ];
+
+        let cursor = start;
+        for (let burst = 0; burst < 2; burst += 1) {
+            pattern.forEach((step) => {
+                const oscA = ctx.createOscillator();
+                const oscB = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                oscA.type = 'square';
+                oscB.type = 'sawtooth';
+                oscA.frequency.setValueAtTime(step.f, cursor);
+                oscB.frequency.setValueAtTime(step.f * 1.01, cursor);
+
+                gain.gain.setValueAtTime(0.0001, cursor);
+                gain.gain.exponentialRampToValueAtTime(0.34, cursor + 0.008);
+                gain.gain.exponentialRampToValueAtTime(0.0001, cursor + step.d);
+
+                oscA.connect(gain);
+                oscB.connect(gain);
+                gain.connect(ctx.destination);
+
+                oscA.start(cursor);
+                oscB.start(cursor);
+                oscA.stop(cursor + step.d);
+                oscB.stop(cursor + step.d);
+
+                cursor += step.d + 0.02;
+            });
+            cursor += 0.05;
+        }
+    };
+
+    const playAnnoyingCommentSound = () => {
+        const ctx = ensureCommentAudioContext();
+        if (!ctx) return;
+
+        if (ctx.state === 'running') {
+            playAnnoyingCommentSoundPattern();
+            return;
+        }
+
+        ctx.resume()
+            .then(() => {
+                if (ctx.state === 'running') {
+                    commentAudioUnlocked = true;
+                    playAnnoyingCommentSoundPattern();
+                }
+            })
+            .catch(() => {
+                // Browser still blocks audio until user interaction.
+            });
+    };
+
+    unlockCommentAudio();
 
     // ── Gantt ──────────────────────────────────────────────────────────────
-    let tasks = [
+    let ganttTasks = [
         @foreach($project->tasks as $task)
         @php
             $endDate           = Carbon::parse($task->end_date);
@@ -345,27 +467,171 @@ document.addEventListener('DOMContentLoaded', function () {
             elseif ($task->progress < 100 && $daysUntilDeadline <= 3 && $daysUntilDeadline >= 0) $barClass = 'bar-yellow';
             else                                                              $barClass = 'bar-grey';
         @endphp
-        { id: 'task-{{ $task->id }}', name: '{{ addslashes($task->title) }}', start: '{{ $task->start_date }}', end: '{{ $task->end_date }}', progress: {{ $task->progress }}, custom_class: '{{ $barClass }}' },
+        { id: 'task-{{ $task->id }}', name: '{{ addslashes($task->title) }}', start: '{{ $task->start_date }}', end: '{{ $task->end_date }}', progress: {{ $task->progress }}, custom_class: '{{ $barClass }}', task_id: {{ $task->id }}, is_subtask: false, description: '{{ addslashes($task->description ?? '') }}', is_completed: {{ $task->progress >= 100 ? 'true' : 'false' }}, status_label: '{{ $task->progress >= 100 ? 'COMPLETED' : 'IN PROGRESS' }}' },
+        @foreach($task->subTasks as $subTask)
+        { id: 'subtask-{{ $subTask->id }}', name: '[{{ $subTask->unique_code ?? ('ST-LEGACY-' . str_pad((string) $subTask->id, 6, '0', STR_PAD_LEFT)) }}] {{ addslashes($subTask->title) }}', start: '{{ $subTask->start_date ? \Illuminate\Support\Carbon::parse($subTask->start_date)->toDateString() : $task->start_date }}', end: '{{ $subTask->end_date ? \Illuminate\Support\Carbon::parse($subTask->end_date)->toDateString() : $task->end_date }}', progress: {{ $subTask->is_completed ? 100 : 0 }}, custom_class: 'bar-orange', task_id: {{ $task->id }}, is_subtask: true, subtask_id: {{ $subTask->id }}, unique_code: '{{ $subTask->unique_code ?? ('ST-LEGACY-' . str_pad((string) $subTask->id, 6, '0', STR_PAD_LEFT)) }}', description: '{{ addslashes($subTask->description ?? '') }}', is_completed: {{ $subTask->is_completed ? 'true' : 'false' }}, status_label: '{{ $subTask->is_completed ? 'COMPLETED' : 'PENDING APPROVAL' }}' },
+        @endforeach
         @endforeach
     ];
 
-    if (tasks.length) {
-        const gantt = new Gantt('#gantt', tasks, { view_mode: 'Day', readonly: true });
+    const ganttColorMap = {
+        'bar-green': '#10b981',
+        'bar-yellow': '#f59e0b',
+        'bar-red': '#ef4444',
+        'bar-grey': '#94a3b8',
+        'bar-orange': '#f97316',
+    };
 
-        setTimeout(() => {
-            const colorMap = { 'bar-green': '#10b981', 'bar-yellow': '#f59e0b', 'bar-red': '#ef4444', 'bar-grey': '#94a3b8' };
-            document.querySelectorAll('[class*="bar-green"],[class*="bar-yellow"],[class*="bar-red"],[class*="bar-grey"]').forEach(w => {
-                const cls = w.className.baseVal || w.className;
-                const color = Object.entries(colorMap).find(([k]) => cls.includes(k))?.[1];
-                if (color) {
-                    const el = w.querySelector('.bar') || w.querySelector('rect');
-                    if (el) { el.setAttribute('fill', color); el.style.fill = color; }
-                }
-            });
-        }, 100);
-    } else {
-        document.getElementById('gantt').innerHTML = '<p class="py-4 text-center text-sm text-slate-400">No tasks to display yet.</p>';
-    }
+    const applyGanttColors = () => {
+        document.querySelectorAll('[class*="bar-green"],[class*="bar-yellow"],[class*="bar-red"],[class*="bar-grey"],[class*="bar-orange"]').forEach((wrapper) => {
+            const cls = wrapper.className.baseVal || wrapper.className;
+            const color = Object.entries(ganttColorMap).find(([key]) => cls.includes(key))?.[1];
+            if (!color) return;
+            const el = wrapper.querySelector('.bar') || wrapper.querySelector('rect');
+            if (!el) return;
+            el.setAttribute('fill', color);
+            el.style.fill = color;
+        });
+    };
+
+    const buildGanttPopup = (task) => {
+        const sanitize = (value = '') => String(value)
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;')
+            .replaceAll("'", '&#039;');
+        const description = (task.description || '').trim() || 'No description provided.';
+        const statusLabel = task.status_label || (task.progress >= 100 ? 'COMPLETED' : 'IN PROGRESS');
+        const typeLabel = task.is_subtask ? 'Subtask' : 'Task';
+
+        return `
+            <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-xl min-w-[220px]">
+                <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">${typeLabel}</p>
+                <p class="mt-1 text-sm font-semibold text-slate-900">${sanitize(task.name || '')}</p>
+                <p class="mt-1 text-xs text-slate-600">${sanitize(description)}</p>
+                <p class="mt-2 text-[11px] font-semibold ${statusLabel === 'COMPLETED' ? 'text-emerald-600' : 'text-amber-600'}">${sanitize(statusLabel)}</p>
+            </div>
+        `;
+    };
+
+    const renderGantt = () => {
+        const ganttRoot = document.getElementById('gantt');
+        if (!ganttRoot) return;
+
+        if (!ganttTasks.length) {
+            ganttRoot.innerHTML = '<p class="py-4 text-center text-sm text-slate-400">No tasks to display yet.</p>';
+            return;
+        }
+
+        ganttRoot.innerHTML = '';
+        // Recreate chart when task rows change so subtasks can appear immediately.
+        new Gantt('#gantt', ganttTasks, {
+            view_mode: 'Day',
+            readonly: true,
+            custom_popup_html: buildGanttPopup,
+        });
+        setTimeout(applyGanttColors, 100);
+    };
+
+    const insertSubTaskInGantt = (entry) => {
+        const existingIndex = ganttTasks.findIndex((item) => item.id === entry.id);
+        if (existingIndex !== -1) {
+            ganttTasks[existingIndex] = { ...ganttTasks[existingIndex], ...entry };
+            return;
+        }
+
+        const parentKey = `task-${entry.task_id}`;
+        const parentIndex = ganttTasks.findIndex((item) => item.id === parentKey);
+        if (parentIndex === -1) {
+            ganttTasks.push(entry);
+            return;
+        }
+
+        let insertAt = parentIndex + 1;
+        while (insertAt < ganttTasks.length && ganttTasks[insertAt].is_subtask && ganttTasks[insertAt].task_id === entry.task_id) {
+            insertAt += 1;
+        }
+        ganttTasks.splice(insertAt, 0, entry);
+    };
+
+    const markSubTaskCompletedInGantt = (subTaskId) => {
+        const key = `subtask-${subTaskId}`;
+        const idx = ganttTasks.findIndex((item) => item.id === key);
+        if (idx === -1) return;
+
+        ganttTasks[idx] = {
+            ...ganttTasks[idx],
+            progress: 100,
+            is_completed: true,
+            status_label: 'COMPLETED',
+        };
+    };
+
+    const deriveTaskBarClass = (task) => {
+        const progress = Number(task?.progress || 0);
+        if (progress >= 100) return 'bar-green';
+
+        const endDate = new Date(`${task?.end_date}T00:00:00`);
+        const todayDate = new Date(`${todayIso}T00:00:00`);
+        const msInDay = 24 * 60 * 60 * 1000;
+        const daysUntilDeadline = Math.floor((endDate - todayDate) / msInDay);
+
+        if (endDate < todayDate) return 'bar-red';
+        if (progress < 100 && daysUntilDeadline <= 3 && daysUntilDeadline >= 0) return 'bar-yellow';
+        return 'bar-grey';
+    };
+
+    const upsertTaskInGantt = (task) => {
+        if (!task?.id) return false;
+
+        const key = `task-${task.id}`;
+        const next = {
+            id: key,
+            name: task.title || `Task ${task.id}`,
+            start: task.start_date,
+            end: task.end_date,
+            progress: Number(task.progress || 0),
+            custom_class: deriveTaskBarClass(task),
+            task_id: Number(task.id),
+            is_subtask: false,
+            description: task.description || '',
+            is_completed: Number(task.progress || 0) >= 100 || task.status === 'completed',
+            status_label: (Number(task.progress || 0) >= 100 || task.status === 'completed') ? 'COMPLETED' : 'IN PROGRESS',
+        };
+
+        const existingIndex = ganttTasks.findIndex((item) => item.id === key);
+        if (existingIndex === -1) {
+            ganttTasks.push(next);
+            return true;
+        }
+
+        ganttTasks[existingIndex] = { ...ganttTasks[existingIndex], ...next };
+        return true;
+    };
+
+    const syncTaskProgressInGantt = (taskSnapshot) => {
+        if (!taskSnapshot?.id) return false;
+        const key = `task-${taskSnapshot.id}`;
+        const idx = ganttTasks.findIndex((item) => item.id === key);
+        if (idx === -1) return false;
+
+        const progress = Number(taskSnapshot.progress || 0);
+        ganttTasks[idx] = {
+            ...ganttTasks[idx],
+            progress,
+            is_completed: progress >= 100 || taskSnapshot.status === 'completed',
+            status_label: (progress >= 100 || taskSnapshot.status === 'completed') ? 'COMPLETED' : 'IN PROGRESS',
+            custom_class: deriveTaskBarClass({
+                progress,
+                end_date: ganttTasks[idx].end,
+            }),
+        };
+
+        return true;
+    };
+
+    renderGantt();
 
     // ── Toggle comments show/hide ─────────────────────────────────────────
     const toggleStates = {};
@@ -424,6 +690,35 @@ document.addEventListener('DOMContentLoaded', function () {
         return `<div class="mt-3 space-y-2"><img src="/storage/${escapeHtml(attachment)}" class="${imageHeight} rounded-xl object-cover" alt="legacy attachment"><p class="text-[11px] ${noteClass}">Legacy file preview</p></div>`;
     };
 
+    const normalizeApprovalMessage = (message = '', type = '') => {
+        if (!message) return message;
+        if (!(type || '').startsWith('subtask_approval:')) return message;
+        return message.replace(' If everything is OK, Please click ("Yes I approve this!" button)', '');
+    };
+
+    const parseSubTaskApprovalType = (type = '') => {
+        const match = /^subtask_approval:(\d+)(?::(pending|completed))?$/i.exec(type || '');
+        if (!match) return null;
+        return {
+            subTaskId: Number(match[1]),
+            status: (match[2] || 'pending').toLowerCase(),
+        };
+    };
+
+    const renderApprovalAction = (comment) => {
+        const parsed = parseSubTaskApprovalType(comment?.type || '');
+        if (!parsed) return '';
+
+        const ganttEntry = ganttTasks.find((item) => item.id === `subtask-${parsed.subTaskId}`);
+        const completed = parsed.status === 'completed' || !!ganttEntry?.is_completed;
+
+        if (isClientRole && !completed) {
+            return `<div class="mt-3"><button type="button" onclick="approveSubtask(${parsed.subTaskId}, ${comment.id})" class="inline-flex items-center rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500">Yes I approve this!</button></div>`;
+        }
+
+        return `<div class="mt-3"><span class="inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${completed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${completed ? 'COMPLETED' : 'Awaiting client approval'}</span></div>`;
+    };
+
     const renderReactionButtons = (commentId, justify = '', active = null) => {
         const upClass = active === 'up'
             ? 'bg-emerald-100 text-emerald-700 font-semibold'
@@ -442,7 +737,7 @@ document.addEventListener('DOMContentLoaded', function () {
         <input type="hidden" name="_token" value="{{ csrf_token() }}">
         <input type="hidden" name="parent_id" value="${commentId}">
         <div class="space-y-2">
-            <input type="text" name="message" placeholder="Write a reply…" class="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+            <input type="text" name="message" placeholder="${dynamicReplyPlaceholder}" class="w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
             <div class="flex items-center gap-2">
                 <input type="text" name="link_url" placeholder="Paste a link (optional)" class="flex-1 rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
                 <button type="submit" class="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500">Send</button>
@@ -459,9 +754,10 @@ document.addEventListener('DOMContentLoaded', function () {
                     <span class="text-[10px] text-slate-400">${escapeHtml(c.created_label ?? c.created_at)}</span>
                 </div>
                 <div class="rounded-2xl px-3.5 py-2.5 text-sm ${isMe ? 'rounded-tr-sm bg-emerald-100 text-emerald-950' : 'rounded-tl-sm border border-slate-200 bg-white text-slate-800'}">
-                    ${c.message ? `<p class="whitespace-pre-line">${escapeHtml(c.message)}</p>` : ''}
+                    ${c.message ? `<p class="whitespace-pre-line">${escapeHtml(normalizeApprovalMessage(c.message, c.type))}</p>` : ''}
                     ${renderLink(c.link_url, isMe, 'reply')}
                     ${renderLegacyAttachment(c.attachment, isMe, 'reply')}
+                    ${renderApprovalAction(c)}
                 </div>
                 ${renderReactionButtons(c.id, isMe ? 'justify-end' : '')}
             </div>
@@ -478,9 +774,10 @@ document.addEventListener('DOMContentLoaded', function () {
                         <span class="text-[10px] text-slate-400">${escapeHtml(c.created_label ?? c.created_at)}</span>
                     </div>
                     <div class="rounded-2xl px-4 py-2.5 text-sm ${isMe ? 'rounded-tr-sm bg-emerald-600 text-white' : 'rounded-tl-sm border border-slate-200 bg-white text-slate-800'}">
-                        ${c.message ? `<p class="whitespace-pre-line">${escapeHtml(c.message)}</p>` : ''}
+                        ${c.message ? `<p class="whitespace-pre-line">${escapeHtml(normalizeApprovalMessage(c.message, c.type))}</p>` : ''}
                         ${renderLink(c.link_url, isMe, 'root')}
                         ${renderLegacyAttachment(c.attachment, isMe, 'root')}
+                        ${renderApprovalAction(c)}
                     </div>
                     <div class="mt-1.5 flex flex-wrap items-center gap-2 ${isMe ? 'justify-end' : ''}" id="reactions-${c.id}">
                         ${renderReactionButtons(c.id, '').replace(/^<div[^>]*>|<\/div>$/g, '')}
@@ -558,6 +855,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     if (!knownCommentIds[c.task_id].includes(c.id)) {
                         knownCommentIds[c.task_id].push(c.id);
                         appendComment(c);
+                        if (Number(c.user_id) !== currentUserId) {
+                            playAnnoyingCommentSound();
+                        }
                         lastCommentTimestamp = c.created_at;
                     }
                 });
@@ -566,97 +866,320 @@ document.addEventListener('DOMContentLoaded', function () {
     setInterval(pollComments, 5000);
 
     // ── WebSocket ─────────────────────────────────────────────────────────
-    const ch = window.Echo?.channel('project.{{ $project->id }}');
-    if (ch) {
-        const handleNew = (e) => {
-            let c = e.comment;
-            knownCommentIds[c.task_id] = knownCommentIds[c.task_id] ?? [];
-            if (!knownCommentIds[c.task_id].includes(c.id)) {
-                knownCommentIds[c.task_id].push(c.id);
-                appendComment(c);
-                lastCommentTimestamp = c.created_at;
-            }
-        };
-        ch.listen('task.comment.created', handleNew);
-        ch.listen('.task.comment.created', handleNew);
+    const taskCardUrl = (taskId) => `/projects/{{ $project->id }}/tasks/${taskId}/card`;
+    const taskSnapshotUrl = "{{ route('tasks.snapshot', $project->id) }}";
+    let lastTaskSnapshotAt = null;
 
-        // ── Real-time task updates ────────────────────────────────────────
-        const taskCardUrl = (taskId) => `/projects/{{ $project->id }}/tasks/${taskId}/card`;
+    const refreshProjectSummaryCards = () => {
+        const wrappers = Array.from(document.querySelectorAll('[id^="task-wrapper-"]'));
+        const total = wrappers.length;
 
-        const applyToggleState = (id, completed) => {
-            const cb = document.getElementById(`task-checkbox-${id}`);
-            if (cb) {
-                cb.className = `mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
-                    completed ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white hover:border-emerald-500'
-                }`;
-                cb.innerHTML = completed
-                    ? '<svg class="h-3 w-3" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-                    : '';
+        let completed = 0;
+        let inProgress = 0;
+        let overdue = 0;
+
+        wrappers.forEach((wrapper) => {
+            const statusBadge = wrapper.querySelector('[id^="status-badge-"]');
+            const statusText = (statusBadge?.textContent || '').trim().toLowerCase();
+
+            if (statusText === 'completed') {
+                completed += 1;
+            } else if (statusText === 'in progress') {
+                inProgress += 1;
             }
-            const badge = document.getElementById(`status-badge-${id}`);
-            if (badge) {
-                const [cls, txt, lbl] = completed
-                    ? ['bg-emerald-100', 'text-emerald-700', 'Completed']
-                    : ['bg-slate-100', 'text-slate-600', 'Pending'];
-                badge.className = `inline-flex rounded-full px-3 py-1 text-xs font-semibold ${cls} ${txt}`;
-                badge.textContent = lbl;
+
+            const hasOverdueLabel = Array.from(wrapper.querySelectorAll('span'))
+                .some((span) => (span.textContent || '').includes('Overdue'));
+
+            if (hasOverdueLabel && statusText !== 'completed') {
+                overdue += 1;
             }
-            const titleEl = document.getElementById(`task-title-${id}`);
-            if (titleEl) {
-                titleEl.classList.toggle('line-through', completed);
-                titleEl.classList.toggle('text-slate-400', completed);
-                titleEl.classList.toggle('text-slate-900', !completed);
+        });
+
+        const percent = total ? Math.round((completed / total) * 100) : 0;
+
+        const progressValueEl = document.getElementById('project-progress-value');
+        if (progressValueEl) {
+            progressValueEl.textContent = `${percent}%`;
+            progressValueEl.classList.remove('text-emerald-600', 'text-amber-600', 'text-slate-900');
+            progressValueEl.classList.add(percent >= 75 ? 'text-emerald-600' : (percent >= 40 ? 'text-amber-600' : 'text-slate-900'));
+        }
+
+        const progressBarEl = document.getElementById('project-progress-bar');
+        if (progressBarEl) {
+            progressBarEl.style.width = `${percent}%`;
+            progressBarEl.classList.remove('bg-emerald-500', 'bg-amber-500', 'bg-sky-500');
+            progressBarEl.classList.add(percent >= 75 ? 'bg-emerald-500' : (percent >= 40 ? 'bg-amber-500' : 'bg-sky-500'));
+        }
+
+        const totalEl = document.getElementById('project-total-tasks');
+        if (totalEl) totalEl.textContent = String(total);
+
+        const completedEl = document.getElementById('project-completed-tasks');
+        if (completedEl) completedEl.textContent = `${completed} completed`;
+
+        const inProgressEl = document.getElementById('project-inprogress-tasks');
+        if (inProgressEl) inProgressEl.textContent = String(inProgress);
+
+        const overdueEl = document.getElementById('project-overdue-tasks');
+        if (overdueEl) {
+            overdueEl.textContent = String(overdue);
+            overdueEl.classList.remove('text-rose-600', 'text-emerald-600');
+            overdueEl.classList.add(overdue > 0 ? 'text-rose-600' : 'text-emerald-600');
+        }
+
+        const overdueCaptionEl = document.getElementById('project-overdue-caption');
+        if (overdueCaptionEl) overdueCaptionEl.textContent = overdue > 0 ? 'past due date' : 'all on track';
+    };
+
+    window.refreshProjectSummaryCards = refreshProjectSummaryCards;
+
+    const applyToggleState = (id, completed, status = null) => {
+        const cb = document.getElementById(`task-checkbox-${id}`);
+        if (cb) {
+            cb.className = `mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${
+                completed ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 bg-white hover:border-emerald-500'
+            }`;
+            cb.innerHTML = completed
+                ? '<svg class="h-3 w-3" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                : '';
+        }
+        const badge = document.getElementById(`status-badge-${id}`);
+        if (badge) {
+            let cls = 'bg-slate-100';
+            let txt = 'text-slate-600';
+            let lbl = 'Pending';
+
+            if (completed || status === 'completed') {
+                cls = 'bg-emerald-100';
+                txt = 'text-emerald-700';
+                lbl = 'Completed';
+            } else if (status === 'in_progress') {
+                cls = 'bg-sky-100';
+                txt = 'text-sky-700';
+                lbl = 'In Progress';
             }
-            const header = document.getElementById(`task-header-${id}`);
-            if (header) {
-                header.className = `p-5 ${completed ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`;
+
+            badge.className = `inline-flex rounded-full px-3 py-1 text-xs font-semibold ${cls} ${txt}`;
+            badge.textContent = lbl;
+        }
+        const titleEl = document.getElementById(`task-title-${id}`);
+        if (titleEl) {
+            titleEl.classList.toggle('line-through', completed);
+            titleEl.classList.toggle('text-slate-400', completed);
+            titleEl.classList.toggle('text-slate-900', !completed);
+        }
+        const header = document.getElementById(`task-header-${id}`);
+        if (header) {
+            header.className = `p-5 ${completed ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`;
+        }
+        const wrapper = document.getElementById(`task-wrapper-${id}`);
+        if (wrapper) {
+            wrapper.className = `mb-5 overflow-hidden rounded-2xl shadow-sm border ${
+                completed ? 'border-emerald-200' : 'border-slate-200'
+            }`;
+        }
+    };
+
+    const applyTaskState = (t) => {
+        if (!t || typeof t.id === 'undefined') return;
+
+        const completed = Number(t.progress) >= 100 || t.status === 'completed';
+        applyToggleState(t.id, completed, t.status ?? null);
+    };
+
+    const fetchAndReplaceTask = (taskId) => {
+        fetch(taskCardUrl(taskId))
+            .then(r => r.text())
+            .then(html => {
+                const wrapper = document.getElementById(`task-wrapper-${taskId}`);
+                if (wrapper) { wrapper.insertAdjacentHTML('afterend', html); wrapper.remove(); }
+                refreshProjectSummaryCards();
+            })
+            .catch(() => {});
+    };
+
+    const fetchAndInjectTask = (taskId) => {
+        if (document.getElementById(`task-wrapper-${taskId}`)) return;
+        fetch(taskCardUrl(taskId))
+            .then(r => r.text())
+            .then(html => {
+                const container = document.getElementById('tasksContainer');
+                if (!container) return;
+                const placeholder = document.getElementById('no-tasks-placeholder');
+                if (placeholder) placeholder.remove();
+                container.insertAdjacentHTML('beforeend', html);
+                refreshProjectSummaryCards();
+            })
+            .catch(() => {});
+    };
+
+    const handleTaskChanged = (e) => {
+        const t = e.task;
+        if (!t) return;
+        applyTaskState(t);
+        refreshProjectSummaryCards();
+        const ganttChanged = upsertTaskInGantt(t);
+        if (ganttChanged) renderGantt();
+
+        if (t.change_type === 'toggled') {
+            fetchAndReplaceTask(t.id);
+            return;
+        } else if (t.change_type === 'updated') {
+            fetchAndReplaceTask(t.id);
+        } else if (t.change_type === 'created') {
+            fetchAndInjectTask(t.id);
+        }
+    };
+
+    const handleSubTaskChanged = (e) => {
+        const s = e.subtask;
+        if (!s || !s.id) return;
+
+        if (s.change_type === 'deleted') {
+            const key = `subtask-${s.id}`;
+            const idx = ganttTasks.findIndex((item) => item.id === key);
+            if (idx !== -1) {
+                ganttTasks.splice(idx, 1);
+                renderGantt();
             }
-            const wrapper = document.getElementById(`task-wrapper-${id}`);
-            if (wrapper) {
-                wrapper.className = `mb-5 overflow-hidden rounded-2xl shadow-sm border ${
-                    completed ? 'border-emerald-200' : 'border-slate-200'
-                }`;
-            }
+            if (s.task_id) fetchAndReplaceTask(s.task_id);
+            return;
+        }
+
+        insertSubTaskInGantt({
+            id: `subtask-${s.id}`,
+            name: `[${s.unique_code}] ${s.title}`,
+            start: s.start_date,
+            end: s.end_date,
+            progress: s.is_completed ? 100 : 0,
+            custom_class: 'bar-orange',
+            task_id: s.task_id,
+            is_subtask: true,
+            subtask_id: s.id,
+            unique_code: s.unique_code,
+            description: s.description || '',
+            is_completed: !!s.is_completed,
+            status_label: s.is_completed ? 'COMPLETED' : 'PENDING APPROVAL',
+        });
+        renderGantt();
+
+        if (s.is_completed) {
+            fetchAndReplaceTask(s.task_id);
+        }
+    };
+
+    window.approveSubtask = async (subTaskId, commentId = null) => {
+        const headers = {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
         };
 
-        const fetchAndReplaceTask = (taskId) => {
-            fetch(taskCardUrl(taskId))
-                .then(r => r.text())
-                .then(html => {
-                    const wrapper = document.getElementById(`task-wrapper-${taskId}`);
-                    if (wrapper) { wrapper.insertAdjacentHTML('afterend', html); wrapper.remove(); }
-                })
-                .catch(() => {});
-        };
-
-        const fetchAndInjectTask = (taskId) => {
-            if (document.getElementById(`task-wrapper-${taskId}`)) return;
-            fetch(taskCardUrl(taskId))
-                .then(r => r.text())
-                .then(html => {
-                    const container = document.getElementById('tasksContainer');
-                    if (!container) return;
-                    const placeholder = document.getElementById('no-tasks-placeholder');
-                    if (placeholder) placeholder.remove();
-                    container.insertAdjacentHTML('beforeend', html);
-                })
-                .catch(() => {});
-        };
-
-        const handleTaskChanged = (e) => {
-            const t = e.task;
-            if (!t) return;
-            if (t.change_type === 'toggled') {
-                applyToggleState(t.id, t.progress >= 100);
-            } else if (t.change_type === 'updated') {
-                fetchAndReplaceTask(t.id);
-            } else if (t.change_type === 'created') {
-                fetchAndInjectTask(t.id);
+        try {
+            const response = await fetch(`/subtasks/${subTaskId}/approve`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ comment_id: commentId }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data?.errors?.message?.[0] || data?.message || 'Failed to approve subtask.');
             }
+
+            markSubTaskCompletedInGantt(subTaskId);
+            renderGantt();
+
+            if (data?.subtask?.task_id) {
+                fetchAndReplaceTask(data.subtask.task_id);
+            }
+        } catch (_err) {
+            // Keep current UI state if request fails.
+        }
+    };
+
+    const pollTaskStates = () => {
+        fetch(taskSnapshotUrl, { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(items => {
+                if (!Array.isArray(items)) return;
+
+                let ganttNeedsRender = false;
+
+                items.forEach((t) => {
+                    if (!t?.updated_at) {
+                        applyTaskState(t);
+                        if (syncTaskProgressInGantt(t)) ganttNeedsRender = true;
+                        return;
+                    }
+
+                    if (!lastTaskSnapshotAt || t.updated_at > lastTaskSnapshotAt) {
+                        applyTaskState(t);
+                        if (syncTaskProgressInGantt(t)) ganttNeedsRender = true;
+                    }
+                });
+
+                if (ganttNeedsRender) renderGantt();
+
+                refreshProjectSummaryCards();
+
+                const newest = items
+                    .map(t => t?.updated_at)
+                    .filter(Boolean)
+                    .sort()
+                    .pop();
+
+                if (newest) {
+                    lastTaskSnapshotAt = lastTaskSnapshotAt && lastTaskSnapshotAt > newest
+                        ? lastTaskSnapshotAt
+                        : newest;
+                }
+            })
+            .catch(() => {});
+    };
+
+    function registerProjectRealtimeListener() {
+        const attach = () => {
+            if (!window.Echo || window.projectRealtimeAttached) return false;
+
+            const ch = window.Echo.channel('project.{{ $project->id }}');
+            const handleNew = (e) => {
+                let c = e.comment;
+                knownCommentIds[c.task_id] = knownCommentIds[c.task_id] ?? [];
+                if (!knownCommentIds[c.task_id].includes(c.id)) {
+                    knownCommentIds[c.task_id].push(c.id);
+                    appendComment(c);
+                    if (Number(c.user_id) !== currentUserId) {
+                        playAnnoyingCommentSound();
+                    }
+                    lastCommentTimestamp = c.created_at;
+                }
+            };
+
+            ch.listen('task.comment.created', handleNew);
+            ch.listen('.task.comment.created', handleNew);
+            ch.listen('task.changed', handleTaskChanged);
+            ch.listen('.task.changed', handleTaskChanged);
+            ch.listen('subtask.changed', handleSubTaskChanged);
+            ch.listen('.subtask.changed', handleSubTaskChanged);
+
+            window.projectRealtimeAttached = true;
+            return true;
         };
-        ch.listen('task.changed', handleTaskChanged);
-        ch.listen('.task.changed', handleTaskChanged);
+
+        if (!attach()) {
+            const intervalId = setInterval(() => {
+                if (attach()) {
+                    clearInterval(intervalId);
+                }
+            }, 250);
+            setTimeout(() => clearInterval(intervalId), 5000);
+        }
     }
+
+    registerProjectRealtimeListener();
+    setInterval(pollTaskStates, 3000);
+    refreshProjectSummaryCards();
 
     // ── Assign Role modal ─────────────────────────────────────────────────
     const modal = document.getElementById('assignRoleModal');
@@ -696,6 +1219,344 @@ document.addEventListener('DOMContentLoaded', function () {
         return 'https://' + trimmed;
     };
 
+    const canManageSubtaskFromComment = {{ in_array(strtolower(auth()->user()->role), ['admin', 'pm', 'dm'], true) ? 'true' : 'false' }};
+    const subtaskModal = document.getElementById('subtaskCommandModal');
+    const subtaskForm = document.getElementById('subtaskCommandForm');
+    const subtaskUniqueCodeInput = document.getElementById('subtask_unique_code');
+    const subtaskTaskIdInput = document.getElementById('subtask_task_id');
+    const subtaskError = document.getElementById('subtaskCommandError');
+    const editSubtaskModal = document.getElementById('editSubtaskCommandModal');
+    const editSubtaskForm = document.getElementById('editSubtaskCommandForm');
+    const editSubtaskList = document.getElementById('edit_subtask_id');
+    const editSubtaskTaskIdInput = document.getElementById('edit_subtask_task_id');
+    const editSubtaskReasonInput = document.getElementById('edit_subtask_reason');
+    const editSubtaskError = document.getElementById('editSubtaskCommandError');
+    const editSubtaskDeleteButton = document.getElementById('deleteSubtaskCommandBtn');
+    let activeSubtaskTaskId = null;
+    let activeEditTaskId = null;
+
+    const generateSubtaskPreviewCode = (taskId) => `ST-${taskId}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
+
+    const closeSubtaskModal = () => {
+        if (!subtaskModal) return;
+        subtaskModal.classList.add('hidden');
+        subtaskModal.classList.remove('flex');
+        subtaskError?.classList.add('hidden');
+        if (subtaskError) subtaskError.textContent = '';
+        subtaskForm?.reset();
+        activeSubtaskTaskId = null;
+    };
+
+    const getSubTaskEntriesForTask = (taskId) => {
+        return ganttTasks.filter((entry) => entry.is_subtask && Number(entry.task_id) === Number(taskId));
+    };
+
+    const closeEditSubtaskModal = () => {
+        if (!editSubtaskModal) return;
+        editSubtaskModal.classList.add('hidden');
+        editSubtaskModal.classList.remove('flex');
+        editSubtaskError?.classList.add('hidden');
+        if (editSubtaskError) editSubtaskError.textContent = '';
+        editSubtaskForm?.reset();
+        if (editSubtaskDeleteButton) editSubtaskDeleteButton.disabled = false;
+        activeEditTaskId = null;
+    };
+
+    const bindSelectedSubTaskToEditForm = () => {
+        if (!editSubtaskList || !editSubtaskForm) return;
+        const selectedId = Number(editSubtaskList.value || 0);
+        const selected = ganttTasks.find((entry) => entry.id === `subtask-${selectedId}`);
+        if (!selected) return;
+
+        const cleanName = String(selected.name || '').replace(/^\[[^\]]+\]\s*/, '');
+        const titleField = editSubtaskForm.querySelector('input[name="title"]');
+        const descriptionField = editSubtaskForm.querySelector('textarea[name="description"]');
+        const startField = editSubtaskForm.querySelector('input[name="start_date"]');
+        const endField = editSubtaskForm.querySelector('input[name="end_date"]');
+
+        if (titleField) {
+            titleField.setAttribute('value', cleanName);
+            titleField.value = cleanName;
+        }
+        if (descriptionField) descriptionField.value = selected.description || '';
+        if (startField) startField.value = selected.start || '';
+        if (endField) endField.value = selected.end || '';
+    };
+
+    const openEditSubtaskModal = (taskId) => {
+        if (!editSubtaskModal || !editSubtaskForm || !editSubtaskList) return;
+
+        activeEditTaskId = Number(taskId);
+        editSubtaskTaskIdInput.value = String(taskId);
+        editSubtaskError?.classList.add('hidden');
+        if (editSubtaskError) editSubtaskError.textContent = '';
+
+        const subTasks = getSubTaskEntriesForTask(taskId);
+        if (!subTasks.length) {
+            if (editSubtaskError) {
+                editSubtaskError.textContent = 'No existing subtasks found for this task.';
+                editSubtaskError.classList.remove('hidden');
+            }
+            return;
+        }
+
+        editSubtaskList.innerHTML = subTasks.map((entry) => {
+            const id = Number(String(entry.id).replace('subtask-', ''));
+            const status = entry.is_completed ? 'COMPLETED' : 'PENDING';
+            const label = `${entry.name} (${status})`;
+            return `<option value="${id}">${label}</option>`;
+        }).join('');
+
+        bindSelectedSubTaskToEditForm();
+        editSubtaskReasonInput.value = '';
+        editSubtaskModal.classList.remove('hidden');
+        editSubtaskModal.classList.add('flex');
+        if (editSubtaskDeleteButton) {
+            editSubtaskDeleteButton.classList.toggle('hidden', !canDeleteSubtaskFromComment);
+        }
+        editSubtaskForm.querySelector('input[name="title"]')?.focus();
+    };
+
+    const openSubtaskModal = (taskId) => {
+        if (!subtaskModal || !subtaskForm) return;
+        activeSubtaskTaskId = Number(taskId);
+        subtaskTaskIdInput.value = String(taskId);
+        subtaskUniqueCodeInput.value = generateSubtaskPreviewCode(taskId);
+        subtaskError?.classList.add('hidden');
+        if (subtaskError) subtaskError.textContent = '';
+        subtaskModal.classList.remove('hidden');
+        subtaskModal.classList.add('flex');
+        subtaskForm.querySelector('input[name="title"]')?.focus();
+    };
+
+    document.getElementById('closeSubtaskCommandModal')?.addEventListener('click', closeSubtaskModal);
+    subtaskModal?.addEventListener('click', (e) => {
+        if (e.target === subtaskModal) closeSubtaskModal();
+    });
+
+    document.getElementById('closeEditSubtaskCommandModal')?.addEventListener('click', closeEditSubtaskModal);
+    editSubtaskModal?.addEventListener('click', (e) => {
+        if (e.target === editSubtaskModal) closeEditSubtaskModal();
+    });
+
+    editSubtaskList?.addEventListener('change', bindSelectedSubTaskToEditForm);
+
+    subtaskForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!activeSubtaskTaskId) return;
+
+        const submitBtn = subtaskForm.querySelector('button[type="submit"]');
+        const originalText = submitBtn?.textContent || '';
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating…';
+        }
+
+        subtaskError?.classList.add('hidden');
+        if (subtaskError) subtaskError.textContent = '';
+
+        const headers = { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' };
+        const socketId = window.Echo?.socketId?.();
+        if (socketId) headers['X-Socket-ID'] = socketId;
+
+        try {
+            const response = await fetch(`/tasks/${activeSubtaskTaskId}/subtasks`, {
+                method: 'POST',
+                headers,
+                body: new FormData(subtaskForm),
+            });
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data?.errors?.message?.[0] || data?.message || 'Failed to create subtask.');
+            }
+
+            const subtask = data.subtask;
+            if (subtask?.id) {
+                insertSubTaskInGantt({
+                    id: `subtask-${subtask.id}`,
+                    name: `[${subtask.unique_code}] ${subtask.title}`,
+                    start: subtask.start_date,
+                    end: subtask.end_date,
+                    progress: subtask.is_completed ? 100 : 0,
+                    custom_class: 'bar-orange',
+                    task_id: subtask.task_id,
+                    is_subtask: true,
+                    subtask_id: subtask.id,
+                    unique_code: subtask.unique_code,
+                    description: subtask.description || '',
+                    is_completed: !!subtask.is_completed,
+                    status_label: subtask.is_completed ? 'COMPLETED' : 'PENDING APPROVAL',
+                });
+                renderGantt();
+            }
+
+            const approvalComment = data.approval_comment;
+            if (approvalComment?.id) {
+                appendComment(approvalComment);
+                knownCommentIds[approvalComment.task_id] = knownCommentIds[approvalComment.task_id] ?? [];
+                if (!knownCommentIds[approvalComment.task_id].includes(approvalComment.id)) {
+                    knownCommentIds[approvalComment.task_id].push(approvalComment.id);
+                }
+                lastCommentTimestamp = approvalComment.created_at;
+            }
+
+            fetchAndReplaceTask(activeSubtaskTaskId);
+            closeSubtaskModal();
+        } catch (err) {
+            if (subtaskError) {
+                subtaskError.textContent = err.message || 'Failed to create subtask.';
+                subtaskError.classList.remove('hidden');
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        }
+    });
+
+    editSubtaskForm?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!activeEditTaskId || !editSubtaskList?.value) return;
+
+        const subTaskId = Number(editSubtaskList.value);
+        const submitBtn = editSubtaskForm.querySelector('button[type="submit"]');
+        const originalText = submitBtn?.textContent || '';
+
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Updating…';
+        }
+
+        editSubtaskError?.classList.add('hidden');
+        if (editSubtaskError) editSubtaskError.textContent = '';
+
+        const headers = {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        };
+        const socketId = window.Echo?.socketId?.();
+        if (socketId) headers['X-Socket-ID'] = socketId;
+
+        const payload = {
+            title: editSubtaskForm.querySelector('input[name="title"]').value,
+            description: editSubtaskForm.querySelector('textarea[name="description"]').value,
+            start_date: editSubtaskForm.querySelector('input[name="start_date"]').value,
+            end_date: editSubtaskForm.querySelector('input[name="end_date"]').value,
+            reason: editSubtaskReasonInput.value,
+        };
+
+        try {
+            const response = await fetch(`/subtasks/${subTaskId}`, {
+                method: 'PUT',
+                headers,
+                body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data?.errors?.reason?.[0] || data?.message || 'Failed to update subtask.');
+            }
+
+            const subtask = data.subtask;
+            if (subtask?.id) {
+                insertSubTaskInGantt({
+                    id: `subtask-${subtask.id}`,
+                    name: `[${subtask.unique_code}] ${subtask.title}`,
+                    start: subtask.start_date,
+                    end: subtask.end_date,
+                    progress: subtask.is_completed ? 100 : 0,
+                    custom_class: 'bar-orange',
+                    task_id: subtask.task_id,
+                    is_subtask: true,
+                    subtask_id: subtask.id,
+                    unique_code: subtask.unique_code,
+                    description: subtask.description || '',
+                    is_completed: !!subtask.is_completed,
+                    status_label: subtask.is_completed ? 'COMPLETED' : 'PENDING APPROVAL',
+                });
+                renderGantt();
+                fetchAndReplaceTask(subtask.task_id);
+            }
+
+            closeEditSubtaskModal();
+        } catch (err) {
+            if (editSubtaskError) {
+                editSubtaskError.textContent = err.message || 'Failed to update subtask.';
+                editSubtaskError.classList.remove('hidden');
+            }
+        } finally {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        }
+    });
+
+    editSubtaskDeleteButton?.addEventListener('click', async () => {
+        if (!canDeleteSubtaskFromComment) return;
+        if (!activeEditTaskId || !editSubtaskList?.value) return;
+
+        const reason = (editSubtaskReasonInput?.value || '').trim();
+        if (!reason) {
+            if (editSubtaskError) {
+                editSubtaskError.textContent = 'Reason is required to delete a subtask.';
+                editSubtaskError.classList.remove('hidden');
+            }
+            editSubtaskReasonInput?.focus();
+            return;
+        }
+
+        const subTaskId = Number(editSubtaskList.value);
+        editSubtaskError?.classList.add('hidden');
+        if (editSubtaskError) editSubtaskError.textContent = '';
+        editSubtaskDeleteButton.disabled = true;
+
+        const headers = {
+            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        };
+        const socketId = window.Echo?.socketId?.();
+        if (socketId) headers['X-Socket-ID'] = socketId;
+
+        try {
+            const response = await fetch(`/subtasks/${subTaskId}`, {
+                method: 'DELETE',
+                headers,
+                body: JSON.stringify({ reason }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data?.errors?.reason?.[0] || data?.message || 'Failed to delete subtask.');
+            }
+
+            const key = `subtask-${subTaskId}`;
+            const idx = ganttTasks.findIndex((item) => item.id === key);
+            if (idx !== -1) {
+                ganttTasks.splice(idx, 1);
+                renderGantt();
+            }
+
+            if (data?.subtask?.task_id) {
+                fetchAndReplaceTask(data.subtask.task_id);
+            }
+
+            closeEditSubtaskModal();
+        } catch (err) {
+            if (editSubtaskError) {
+                editSubtaskError.textContent = err.message || 'Failed to delete subtask.';
+                editSubtaskError.classList.remove('hidden');
+            }
+        } finally {
+            editSubtaskDeleteButton.disabled = false;
+        }
+    });
+
     // Event delegation so dynamically injected inputs also get normalised
     document.addEventListener('focusout', (e) => {
         if (e.target.matches('input[name="link_url"]') && e.target.value.trim()) {
@@ -703,18 +1564,59 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
+    const resolveTaskIdFromForm = (form) => {
+        const direct = form?.dataset?.taskId;
+        if (direct) return Number(direct);
+
+        const action = form?.getAttribute('action') || '';
+        const match = action.match(/\/tasks\/(\d+)\/comments/i);
+        return match ? Number(match[1]) : null;
+    };
+
     // ── Comment form AJAX submit (delegated — works for dynamically added forms too) ──
     const commentSubmitHandler = function(e) {
         e.preventDefault();
         const form = e.target;
+        const messageInput = form.querySelector('input[name="message"]');
+        const slashCommand = (messageInput?.value || '').trim();
+
+        form.querySelector('.comment-ajax-error')?.remove();
+
+        if (/^\/subtask\b/i.test(slashCommand)) {
+            if (!canManageSubtaskFromComment) {
+                const err = document.createElement('p');
+                err.className = 'comment-ajax-error mt-1 text-xs text-rose-600';
+                err.textContent = 'Only Admin, PM, and DM can use /subtask.';
+                messageInput?.after(err);
+                return;
+            }
+
+            const taskId = resolveTaskIdFromForm(form);
+            if (!taskId) return;
+            openSubtaskModal(taskId);
+            return;
+        }
+
+        if (/^\/edit-subtask\b/i.test(slashCommand)) {
+            if (!canManageSubtaskFromComment) {
+                const err = document.createElement('p');
+                err.className = 'comment-ajax-error mt-1 text-xs text-rose-600';
+                err.textContent = 'Only Admin, PM, and DM can use /edit-subtask.';
+                messageInput?.after(err);
+                return;
+            }
+
+            const taskId = resolveTaskIdFromForm(form);
+            if (!taskId) return;
+            openEditSubtaskModal(taskId);
+            return;
+        }
+
         const linkInput = form.querySelector('input[name="link_url"]');
         if (linkInput && linkInput.value.trim()) linkInput.value = normaliseUrl(linkInput.value);
         const fd  = new FormData(form);
         const btn = form.querySelector('button[type="submit"]');
         if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
-
-        // Remove any prior inline error
-        form.querySelector('.comment-ajax-error')?.remove();
 
         const headers = { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' };
         const socketId = window.Echo?.socketId?.();
@@ -752,10 +1654,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (e.target.matches('.comment-form-ajax')) commentSubmitHandler(e);
     });
 
-    const projectMentionUsers = @json($projectUsers->map(fn($user) => [
-        'name'  => $user->name,
-        'label' => $user->name . ' | ' . $user->email,
-    ]));
+    const projectMentionUsers = @json($projectMentionUsers);
+
+    const allMentionUsers = @json($allMentionUsers);
+
+    const mentionUsers = Array.from(
+        [...projectMentionUsers, ...allMentionUsers].reduce((acc, user) => {
+            const key = (user.email || user.name || '').toLowerCase();
+            if (!key || acc.has(key)) return acc;
+            acc.set(key, user);
+            return acc;
+        }, new Map()).values()
+    );
 
     function findMentionQuery(text, pos) {
         const slice = text.slice(0, pos);
@@ -781,8 +1691,10 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        const matches = projectMentionUsers.filter(user =>
-            user.name.toLowerCase().includes(mention.query.toLowerCase())
+        const query = mention.query.toLowerCase();
+        const matches = mentionUsers.filter(user =>
+            user.name.toLowerCase().includes(query) ||
+            (user.email || '').toLowerCase().includes(query)
         ).slice(0, 8);
 
         if (!matches.length) {
@@ -991,6 +1903,111 @@ window.reactComment = function(commentId, type) {
 };
 </script>
 
+{{-- ── Slash Command Subtask Modal ───────────────────────────────────────── --}}
+<div id="subtaskCommandModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
+    <div class="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                <h3 class="text-xl font-semibold text-slate-900">Create Subtask From /subtask</h3>
+                <p class="mt-1 text-sm text-slate-500">Add a subtask and post the client approval comment automatically.</p>
+            </div>
+            <button id="closeSubtaskCommandModal" type="button" class="rounded-3xl border border-slate-200 px-4 py-2 text-slate-700 transition hover:bg-slate-100">Close</button>
+        </div>
+
+        <form id="subtaskCommandForm" class="mt-5 grid gap-4 sm:grid-cols-2">
+            @csrf
+            <input type="hidden" id="subtask_task_id" name="task_id" value="">
+
+            <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Unique ID</label>
+                <input type="text" id="subtask_unique_code" class="w-full rounded-3xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-600" readonly>
+            </div>
+
+            <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Subtask title <span class="text-rose-500">*</span></label>
+                <input type="text" name="title" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
+            </div>
+
+            <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Description</label>
+                <textarea name="description" rows="3" class="w-full resize-none rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"></textarea>
+            </div>
+
+            <div>
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Start date <span class="text-rose-500">*</span></label>
+                <input type="date" name="start_date" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
+            </div>
+
+            <div>
+                <label class="mb-2 block text-sm font-semibold text-slate-700">End date <span class="text-rose-500">*</span></label>
+                <input type="date" name="end_date" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
+            </div>
+
+            <p id="subtaskCommandError" class="hidden sm:col-span-2 text-sm text-rose-600"></p>
+
+            <div class="sm:col-span-2">
+                <button type="submit" class="w-full rounded-3xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-orange-600">Create Subtask</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div id="editSubtaskCommandModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
+    <div class="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
+        <div class="flex items-center justify-between gap-4">
+            <div>
+                <h3 class="text-xl font-semibold text-slate-900">Edit Subtask From /edit-subtask</h3>
+                <p class="mt-1 text-sm text-slate-500">Update an existing subtask details and provide a reason.</p>
+            </div>
+            <button id="closeEditSubtaskCommandModal" type="button" class="rounded-3xl border border-slate-200 px-4 py-2 text-slate-700 transition hover:bg-slate-100">Close</button>
+        </div>
+
+        <form id="editSubtaskCommandForm" class="mt-5 grid gap-4 sm:grid-cols-2">
+            @csrf
+            <input type="hidden" id="edit_subtask_task_id" name="task_id" value="">
+
+            <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Select subtask <span class="text-rose-500">*</span></label>
+                <select id="edit_subtask_id" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required></select>
+            </div>
+
+            <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Subtask title <span class="text-rose-500">*</span></label>
+                <input type="text" name="title" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
+            </div>
+
+            <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Description</label>
+                <textarea name="description" rows="3" class="w-full resize-none rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"></textarea>
+            </div>
+
+            <div>
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Start date <span class="text-rose-500">*</span></label>
+                <input type="date" name="start_date" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
+            </div>
+
+            <div>
+                <label class="mb-2 block text-sm font-semibold text-slate-700">End date <span class="text-rose-500">*</span></label>
+                <input type="date" name="end_date" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
+            </div>
+
+            <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Reason <span class="text-rose-500">*</span></label>
+                <input id="edit_subtask_reason" type="text" name="reason" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
+            </div>
+
+            <p id="editSubtaskCommandError" class="hidden sm:col-span-2 text-sm text-rose-600"></p>
+
+            <div class="sm:col-span-2">
+                <div class="flex items-center gap-3">
+                    <button type="submit" class="flex-1 rounded-3xl bg-amber-500 px-6 py-3 text-sm font-semibold text-white transition hover:bg-amber-600">Update Subtask</button>
+                    <button id="deleteSubtaskCommandBtn" type="button" class="hidden rounded-3xl bg-rose-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-rose-700">Delete Subtask</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
 {{-- ── Edit Task Modal ────────────────────────────────────────────────────── --}}
 <div id="editTaskModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/50 p-4">
     <div class="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
@@ -1064,6 +2081,23 @@ window.reactComment = function(commentId, type) {
 
 <script>
     const editTaskModal = document.getElementById('editTaskModal');
+    const editTaskForm = document.getElementById('editTaskForm');
+    const editTaskStatus = document.getElementById('etask_status');
+    const editTaskProgress = document.getElementById('etask_progress');
+
+    const deriveProgressFromStatus = (status, currentProgress = 0) => {
+        const progressValue = Number(currentProgress) || 0;
+        if (status === 'completed') return 100;
+        if (status === 'pending') return 0;
+        if (status === 'in_progress') return (progressValue > 0 && progressValue < 100) ? progressValue : 50;
+        return progressValue;
+    };
+
+    const syncEditProgressWithStatus = () => {
+        if (!editTaskStatus || !editTaskProgress) return;
+        editTaskProgress.value = deriveProgressFromStatus(editTaskStatus.value, editTaskProgress.value);
+    };
+
     document.getElementById('closeEditTaskModal').addEventListener('click', () => {
         editTaskModal.classList.add('hidden');
         editTaskModal.classList.remove('flex');
@@ -1085,16 +2119,19 @@ window.reactComment = function(commentId, type) {
         document.getElementById('etask_assigned_to').value = assignedTo;
         document.getElementById('etask_start_date').value  = startDate;
         document.getElementById('etask_end_date').value    = endDate;
-        document.getElementById('etask_progress').value = progress;
-        document.getElementById('etask_status').value     = status || 'pending';
+        editTaskStatus.value = status || 'pending';
+        editTaskProgress.value = deriveProgressFromStatus(editTaskStatus.value, progress);
         editTaskModal.classList.remove('hidden');
         editTaskModal.classList.add('flex');
     }
 
+    editTaskStatus?.addEventListener('change', syncEditProgressWithStatus);
+
     // ── Edit Task AJAX ────────────────────────────────────────────────────
-    document.getElementById('editTaskForm').addEventListener('submit', async function(e) {
+    editTaskForm.addEventListener('submit', async function(e) {
         e.preventDefault();
         const taskId = editingTaskId;
+        syncEditProgressWithStatus();
         const submitBtn = this.querySelector('button[type="submit"]');
         const origText = submitBtn ? submitBtn.textContent : '';
         if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
@@ -1108,6 +2145,7 @@ window.reactComment = function(commentId, type) {
             const html = await cardR.text();
             const wrapper = document.getElementById(`task-wrapper-${taskId}`);
             if (wrapper) { wrapper.insertAdjacentHTML('afterend', html); wrapper.remove(); }
+            window.refreshProjectSummaryCards?.();
             editTaskModal.classList.add('hidden');
             editTaskModal.classList.remove('flex');
         } catch (err) {

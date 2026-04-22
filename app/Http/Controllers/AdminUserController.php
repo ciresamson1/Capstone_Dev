@@ -23,7 +23,7 @@ class AdminUserController extends Controller
     {
         $request->validate([
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'role' => ['required', 'in:admin,pm,dm,client'],
+            'role' => ['required', 'in:admin,pm,dm,client,special_pm'],
         ]);
 
         $inviteUrl = route('register', ['email' => $request->email, 'role' => $request->role]);
@@ -45,7 +45,7 @@ class AdminUserController extends Controller
             'first_name' => ['required', 'string', 'max:255'],
             'last_name'  => ['required', 'string', 'max:255'],
             'email'      => ['required', 'email', 'max:255', Rule::unique('users')->ignore($user->id)],
-            'role'       => ['required', 'in:admin,pm,dm,client'],
+            'role'       => ['required', 'in:admin,pm,dm,client,special_pm'],
             'position'   => ['nullable', 'string', 'max:255'],
             'company'    => ['nullable', 'string', 'max:255'],
             'password'   => ['nullable', 'string', 'min:8', 'confirmed'],

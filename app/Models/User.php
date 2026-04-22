@@ -18,6 +18,15 @@ class User extends Authenticatable
         'role',
         'position',
         'company',
+        'stripe_customer_id',
+        'stripe_subscription_id',
+        'stripe_price_id',
+        'subscription_status',
+        'subscription_current_period_end',
+        'white_label_brand_name',
+        'white_label_logo_url',
+        'white_label_primary_color',
+        'white_label_accent_color',
     ];
 
     protected $hidden = [

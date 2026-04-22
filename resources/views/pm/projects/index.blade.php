@@ -141,13 +141,14 @@
                         <thead>
                             <tr>
                                 <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Project <button onclick="sortTable('projectsTable',0,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',0,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Owner <button onclick="sortTable('projectsTable',1,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',1,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Client <button onclick="sortTable('projectsTable',2,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',2,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Company <button onclick="sortTable('projectsTable',3,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',3,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Progress <button onclick="sortTable('projectsTable',4,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',4,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Status <button onclick="sortTable('projectsTable',5,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',5,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Tasks <button onclick="sortTable('projectsTable',6,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',6,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Ends <button onclick="sortTable('projectsTable',7,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',7,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Unique ID <button onclick="sortTable('projectsTable',1,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',1,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Owner <button onclick="sortTable('projectsTable',2,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',2,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Client <button onclick="sortTable('projectsTable',3,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',3,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Company <button onclick="sortTable('projectsTable',4,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',4,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Progress <button onclick="sortTable('projectsTable',5,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',5,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Status <button onclick="sortTable('projectsTable',6,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',6,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Tasks <button onclick="sortTable('projectsTable',7,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',7,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Ends <button onclick="sortTable('projectsTable',8,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',8,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="pb-4 font-semibold text-slate-900">Actions</th>
                             </tr>
                         </thead>
@@ -161,6 +162,7 @@
                                         <div class="font-semibold text-slate-900">{{ $project->name }}</div>
                                         <div class="text-sm text-slate-500">{{ \Illuminate\Support\Str::limit($project->description, 80) }}</div>
                                     </td>
+                                    <td class="py-5 pr-8 text-slate-700">{{ $project->unique_id }}</td>
                                     <td class="py-5 pr-8 text-slate-700">{{ $project->creator?->name ?? 'Unassigned' }}</td>
                                     <td class="py-5 pr-8 text-slate-700">{{ $project->client?->name ?? '—' }}</td>
                                     <td class="py-5 pr-8 text-slate-700">{{ $project->client?->company ?? '—' }}</td>
@@ -202,7 +204,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="7" class="py-10 text-center text-sm text-slate-500">No projects yet. Create your first project above.</td>
+                                    <td colspan="10" class="py-10 text-center text-sm text-slate-500">No projects yet. Create your first project above.</td>
                                 </tr>
                             @endforelse
                         </tbody>

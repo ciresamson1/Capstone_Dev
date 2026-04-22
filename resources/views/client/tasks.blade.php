@@ -119,7 +119,7 @@
                         <thead class="border-b border-slate-200">
                             <tr>
                                 <th class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">Task <button onclick="sortTable('tasksTable',0,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',0,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">Project <button onclick="sortTable('tasksTable',1,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',1,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">Task Unique ID <button onclick="sortTable('tasksTable',1,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',1,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">Assigned To <button onclick="sortTable('tasksTable',2,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',2,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">Status <button onclick="sortTable('tasksTable',3,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',3,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="px-6 py-4 font-semibold text-slate-900 whitespace-nowrap">Due Date <button onclick="sortTable('tasksTable',4,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',4,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
@@ -133,7 +133,7 @@
                                     data-project="{{ $task->project_id }}"
                                     data-status="{{ $task->effective_status }}">
                                     <td class="px-6 py-4 font-medium text-slate-900">{{ $task->title }}</td>
-                                    <td class="px-6 py-4">{{ $task->project->name ?? '—' }}</td>
+                                    <td class="px-6 py-4">{{ $task->unique_id }}</td>
                                     <td class="px-6 py-4">{{ $task->assignedTo->name ?? 'Unassigned' }}</td>
                                     <td class="px-6 py-4">
                                         <span class="inline-flex rounded-full px-3 py-1 text-xs font-semibold
@@ -156,7 +156,7 @@
                                 </tr>
                             @empty
                                 <tr>
-                                    <td colspan="6" class="px-6 py-8 text-center text-sm text-slate-500">No tasks found for your projects.</td>
+                                    <td colspan="7" class="px-6 py-8 text-center text-sm text-slate-500">No tasks found for your projects.</td>
                                 </tr>
                             @endforelse
                         </tbody>

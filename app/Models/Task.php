@@ -9,6 +9,7 @@ use Carbon\Carbon;
 class Task extends Model
 {
     protected $fillable = [
+        'unique_id',
         'project_id',
         'title',
         'description',
@@ -18,6 +19,21 @@ class Task extends Model
         'progress',
         'status',
     ];
+
+    protected static function booted()
+    {
+        static::creating(function ($task) {
+            if (!empty($task->unique_id)) {
+                return;
+            }
+
+            do {
+                $candidate = 'TSK-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 8));
+            } while (static::where('unique_id', $candidate)->exists());
+
+            $task->unique_id = $candidate;
+        });
+    }
 
     /**
      * Returns the effective display status.
@@ -42,6 +58,11 @@ class Task extends Model
     public function assignedTo()
     {
         return $this->belongsTo(User::class, 'assigned_to');
+    }
+
+    public function subTasks()
+    {
+        return $this->hasMany(SubTask::class)->orderBy('created_at');
     }
 
    public function comments()

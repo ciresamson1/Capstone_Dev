@@ -8,6 +8,13 @@
     $lastComment      = $taskComments->last();
     $hasRecentComment = $lastComment && $lastComment->created_at->gt(now()->subHours(24));
     $headerBg         = $taskOverdue ? 'bg-rose-50 border-rose-200' : ($taskProgress >= 100 ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200');
+    $isClientRole     = strtolower((string) auth()->user()->role) === 'client';
+    $messagePlaceholder = $isClientRole
+        ? 'Write a message...'
+        : 'Write a message... (/subtask or /edit-subtask)';
+    $replyPlaceholder = $isClientRole
+        ? 'Write a reply...'
+        : 'Write a reply... (/subtask or /edit-subtask)';
 @endphp
 
 <div id="task-wrapper-{{ $task->id }}" class="mb-5 overflow-hidden rounded-2xl shadow-sm border {{ $taskOverdue ? 'border-rose-200' : ($taskProgress >= 100 ? 'border-emerald-200' : 'border-slate-200') }}">
@@ -116,6 +123,17 @@
                     $ups      = $comment->reactions->where('type', 'up')->count();
                     $downs    = $comment->reactions->where('type', 'down')->count();
                     $myReact  = $comment->reactions->where('user_id', auth()->id())->first()?->type;
+                    $approvalMeta = null;
+                    if ($comment->type && preg_match('/^subtask_approval:(\d+)(?::(pending|completed))?$/i', $comment->type, $matches)) {
+                        $approvalMeta = [
+                            'subtask_id' => (int) $matches[1],
+                            'status' => strtolower($matches[2] ?? 'pending'),
+                        ];
+                    }
+                    $approvalSubTask = $approvalMeta ? $task->subTasks->firstWhere('id', $approvalMeta['subtask_id']) : null;
+                    $isApprovalCompleted = $approvalSubTask
+                        ? ((bool) $approvalSubTask->is_completed || $approvalMeta['status'] === 'completed')
+                        : false;
                 @endphp
                 <div class="comment-thread {{ !$loop->last ? 'older-comment' : '' }}"
                      style="{{ !$loop->last ? 'display:none' : '' }}"
@@ -135,7 +153,11 @@
                             <div class="rounded-2xl px-4 py-2.5 text-sm {{ $isMe ? 'rounded-tr-sm bg-emerald-600 text-white' : 'rounded-tl-sm border border-slate-200 bg-white text-slate-800' }}">
                                 @if($comment->message)
                                     @php
-                                        $commentMessage = preg_replace('/(@[A-Za-z0-9_.-]+)/', '<span class="text-sky-600 font-semibold">$1</span>', e($comment->message));
+                                        $displayCommentMessage = $comment->message;
+                                        if ($comment->type && str_starts_with((string) $comment->type, 'subtask_approval:')) {
+                                            $displayCommentMessage = str_replace(' If everything is OK, Please click ("Yes I approve this!" button)', '', $displayCommentMessage);
+                                        }
+                                        $commentMessage = preg_replace('/(@[A-Za-z0-9_.-]+)/', '<span class="text-sky-600 font-semibold">$1</span>', e($displayCommentMessage));
                                     @endphp
                                     <p class="whitespace-pre-line">{!! $commentMessage !!}</p>
                                 @endif
@@ -150,6 +172,21 @@
                                     <div class="{{ $comment->message || $comment->link_url ? 'mt-3' : '' }} space-y-2">
                                         <img src="{{ asset('storage/' . $comment->attachment) }}" class="max-h-40 rounded-xl object-cover" alt="legacy attachment">
                                         <p class="text-[11px] {{ $isMe ? 'text-emerald-100' : 'text-slate-400' }}">Legacy file preview</p>
+                                    </div>
+                                @endif
+                                @if($approvalSubTask)
+                                    <div class="mt-3">
+                                        @if(auth()->user()->role === 'client' && !$isApprovalCompleted)
+                                            <button type="button"
+                                                onclick="approveSubtask({{ $approvalSubTask->id }}, {{ $comment->id }})"
+                                                class="inline-flex items-center rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500">
+                                                Yes I approve this!
+                                            </button>
+                                        @else
+                                            <span class="inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold {{ $isApprovalCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' }}">
+                                                {{ $isApprovalCompleted ? 'COMPLETED' : 'Awaiting client approval' }}
+                                            </span>
+                                        @endif
                                     </div>
                                 @endif
                             </div>
@@ -249,7 +286,7 @@
                                 <input type="hidden" name="parent_id" value="{{ $comment->id }}">
                                 <div class="space-y-2">
                                     <div class="relative comment-mention-wrapper">
-                                        <input type="text" name="message" placeholder="Write a reply…"
+                                        <input type="text" name="message" placeholder="{{ $replyPlaceholder }}"
                                             class="mention-input w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
                                         <ul class="mention-dropdown absolute left-0 right-0 z-50 mt-1 hidden max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-lg"></ul>
                                     </div>
@@ -281,7 +318,7 @@
             @csrf
             <div class="space-y-2">
                 <div class="relative comment-mention-wrapper">
-                    <input type="text" name="message" placeholder="Write a message…"
+                    <input type="text" name="message" placeholder="{{ $messagePlaceholder }}"
                         class="mention-input w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
                     <ul class="mention-dropdown absolute left-0 right-0 z-50 mt-1 hidden max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-lg"></ul>
                 </div>

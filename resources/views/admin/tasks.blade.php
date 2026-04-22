@@ -157,7 +157,7 @@
                         <thead>
                             <tr>
                                 <th class="pb-4 pr-6 font-semibold text-slate-900 whitespace-nowrap">Task <button onclick="sortTable('tasksTable',0,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',0,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
-                                <th class="pb-4 pr-6 font-semibold text-slate-900 whitespace-nowrap">Project <button onclick="sortTable('tasksTable',1,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',1,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                <th class="pb-4 pr-6 font-semibold text-slate-900 whitespace-nowrap">Task Unique ID <button onclick="sortTable('tasksTable',1,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',1,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="pb-4 pr-6 font-semibold text-slate-900 whitespace-nowrap">Assigned to <button onclick="sortTable('tasksTable',2,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',2,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="pb-4 pr-6 font-semibold text-slate-900 whitespace-nowrap">Status <button onclick="sortTable('tasksTable',3,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',3,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="pb-4 pr-6 font-semibold text-slate-900 whitespace-nowrap">Due date <button onclick="sortTable('tasksTable',4,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('tasksTable',4,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
@@ -181,9 +181,7 @@
                                             <div class="text-xs text-slate-400 mt-0.5">{{ \Illuminate\Support\Str::limit($task->description, 70) }}</div>
                                         @endif
                                     </td>
-                                    <td class="py-4 pr-6">
-                                        <span class="inline-flex rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-700">{{ $projectName }}</span>
-                                    </td>
+                                    <td class="py-4 pr-6 text-slate-700">{{ $task->unique_id }}</td>
                                     <td class="py-4 pr-6">
                                         <div class="flex items-center gap-2">
                                             <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700">

@@ -93,7 +93,11 @@ class ProjectController extends Controller
             'client_id'   => request('client_id') ?: null,
         ]);
 
-        ActivityLog::record('created_project', 'Created project "' . $project->name . '"', $project);
+        ActivityLog::record(
+            'created_project',
+            'Created project "' . $project->name . '" [' . $project->unique_id . ']',
+            $project
+        );
 
         Cache::forget('admin_dashboard_data');
         Cache::forget('admin_dashboard_kpi_cards');
@@ -130,6 +134,7 @@ class ProjectController extends Controller
             'tasks.comments.replies.user',
             'tasks.comments.replies.reactions',
             'tasks.assignedTo',
+            'tasks.subTasks',
         ])->findOrFail($id);
 
         $users = User::orderBy('name')->get();
@@ -146,7 +151,29 @@ class ProjectController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'email']);
 
-        return view('projects.show', compact('project', 'users', 'projectUsers'));
+        $projectMentionUsers = $projectUsers->map(function ($user) {
+            return [
+                'name' => $user->name,
+                'email' => $user->email,
+                'label' => $user->name . ' | ' . $user->email,
+            ];
+        })->values();
+
+        $allMentionUsers = $users->map(function ($user) {
+            return [
+                'name' => $user->name,
+                'email' => $user->email,
+                'label' => $user->name . ' | ' . $user->email,
+            ];
+        })->values();
+
+        return view('projects.show', compact(
+            'project',
+            'users',
+            'projectUsers',
+            'projectMentionUsers',
+            'allMentionUsers'
+        ));
     }
 
     public function edit($id)

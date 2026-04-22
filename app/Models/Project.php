@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class Project extends Model
 {
     protected $fillable = [
+        'unique_id',
         'name',
         'description',
         'start_date',
@@ -29,6 +30,21 @@ class Project extends Model
     public function tasks()
     {
         return $this->hasMany(Task::class);
+    }
+
+    protected static function booted()
+    {
+        static::creating(function ($project) {
+            if (!empty($project->unique_id)) {
+                return;
+            }
+
+            do {
+                $candidate = 'PRJ-' . strtoupper(substr(bin2hex(random_bytes(4)), 0, 8));
+            } while (static::where('unique_id', $candidate)->exists());
+
+            $project->unique_id = $candidate;
+        });
     }
 
     public function getProgressAttribute()

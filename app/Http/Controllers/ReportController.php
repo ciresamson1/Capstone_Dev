@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\Project;
+use App\Models\SubTask;
 use App\Models\Task;
 use App\Models\ProgressLog;
 use App\Models\TaskComment;
@@ -78,7 +79,12 @@ class ReportController extends Controller
 
                 $totalComments = TaskComment::where('user_id', $dm->id)->count();
                 $totalReplies  = TaskComment::where('user_id', $dm->id)->whereNotNull('parent_id')->count();
-                $revisionRate  = $totalComments > 0 ? round(($totalReplies / $totalComments) * 100) : 0;
+                $taskIds = $tasks->pluck('id')->all();
+                $approvalStatusBySubTask = $this->buildSubTaskApprovalStatusMap($taskIds);
+                $revisionMetrics = $this->buildDmRevisionMetrics($taskIds, $today, $approvalStatusBySubTask);
+                $revisionRate = $revisionMetrics['revision_rate'];
+                $unapprovedSubtasks = $revisionMetrics['unapproved_subtasks'];
+                $overdueApprovalSubtasks = $revisionMetrics['overdue_approval_subtasks'];
 
                 // Quality score = (completed - revisions_made) / max(1, total) * 100, capped 0-100
                 $qualityScore = $totalTasks > 0
@@ -88,7 +94,8 @@ class ReportController extends Controller
                 return compact(
                     'dm', 'totalTasks', 'completed', 'completionRate',
                     'overdueTasks', 'recentCompleted',
-                    'totalComments', 'totalReplies', 'revisionRate', 'qualityScore'
+                    'totalComments', 'totalReplies', 'revisionRate', 'qualityScore',
+                    'unapprovedSubtasks', 'overdueApprovalSubtasks'
                 );
             });
 
@@ -97,11 +104,12 @@ class ReportController extends Controller
         $assignedClientIds  = Project::whereNotNull('client_id')->pluck('client_id');
         $commentingClientIds = TaskComment::whereNotNull('user_id')->pluck('user_id');
         $clientUserIds = $assignedClientIds->merge($commentingClientIds)->unique();
+        $approvalStatusBySubTask = $this->buildSubTaskApprovalStatusMap();
 
         $clientData = User::where('role', 'client')
             ->whereIn('id', $clientUserIds)
             ->get()
-            ->map(function ($client) {
+            ->map(function ($client) use ($today, $approvalStatusBySubTask) {
                 $totalComments = TaskComment::where('user_id', $client->id)->count();
                 $totalReplies  = TaskComment::where('user_id', $client->id)->whereNotNull('parent_id')->count();
 
@@ -116,8 +124,10 @@ class ReportController extends Controller
                     ->distinct('parent_id')
                     ->count('parent_id');
 
-                // Friction score: high revisions + low engagement = high friction (0–10)
-                $frictionScore = min(10, round($revisionRequests * 0.5 + ($engagementRate < 20 ? 3 : 1)));
+                $approvalMetrics = $this->buildClientApprovalMetrics($client->id, $today, $approvalStatusBySubTask);
+                $approvedSubtasks = $approvalMetrics['approved_subtasks'];
+                $overdueApprovals = $approvalMetrics['overdue_approvals'];
+                $acknowledgmentPercentage = $this->buildAcknowledgmentPercentage($approvedSubtasks, $overdueApprovals);
 
                 // Reactions given BY the client
                 $thumbsUp   = CommentReaction::where('user_id', $client->id)->where('type', 'up')->count();
@@ -127,7 +137,7 @@ class ReportController extends Controller
 
                 return compact(
                     'client', 'totalProjects', 'totalComments', 'totalReplies',
-                    'rootComments', 'engagementRate', 'revisionRequests', 'frictionScore',
+                    'rootComments', 'engagementRate', 'revisionRequests', 'approvedSubtasks', 'overdueApprovals', 'acknowledgmentPercentage',
                     'thumbsUp', 'thumbsDown'
                 );
             });
@@ -145,11 +155,12 @@ class ReportController extends Controller
         $assignedClientIds   = Project::whereIn('id', $myProjectIds)->whereNotNull('client_id')->pluck('client_id');
         $commentingClientIds = TaskComment::whereIn('task_id', $myTaskIds)->pluck('user_id');
         $clientUserIds       = $assignedClientIds->merge($commentingClientIds)->unique();
+        $approvalStatusBySubTask = $this->buildSubTaskApprovalStatusMap($myTaskIds->all());
 
         $clientData = User::where('role', 'client')
             ->whereIn('id', $clientUserIds)
             ->get()
-            ->map(function ($client) use ($myTaskIds, $myProjectIds) {
+            ->map(function ($client) use ($myTaskIds, $myProjectIds, $today, $approvalStatusBySubTask) {
                 $totalComments = TaskComment::where('user_id', $client->id)->whereIn('task_id', $myTaskIds)->count();
                 $totalReplies  = TaskComment::where('user_id', $client->id)->whereIn('task_id', $myTaskIds)->whereNotNull('parent_id')->count();
                 $rootComments  = TaskComment::where('user_id', $client->id)->whereIn('task_id', $myTaskIds)->whereNull('parent_id')->count();
@@ -162,7 +173,16 @@ class ReportController extends Controller
                     ->distinct('parent_id')
                     ->count('parent_id');
 
-                $frictionScore = min(10, round($revisionRequests * 0.5 + ($engagementRate < 20 ? 3 : 1)));
+                $approvalMetrics = $this->buildClientApprovalMetrics(
+                    $client->id,
+                    $today,
+                    $approvalStatusBySubTask,
+                    $myProjectIds->all(),
+                    $myTaskIds->all()
+                );
+                $approvedSubtasks = $approvalMetrics['approved_subtasks'];
+                $overdueApprovals = $approvalMetrics['overdue_approvals'];
+                $acknowledgmentPercentage = $this->buildAcknowledgmentPercentage($approvedSubtasks, $overdueApprovals);
 
                 $thumbsUp   = CommentReaction::where('user_id', $client->id)->where('type', 'up')->count();
                 $thumbsDown = CommentReaction::where('user_id', $client->id)->where('type', 'down')->count();
@@ -171,7 +191,7 @@ class ReportController extends Controller
 
                 return compact(
                     'client', 'totalProjects', 'totalComments', 'totalReplies',
-                    'rootComments', 'engagementRate', 'revisionRequests', 'frictionScore',
+                    'rootComments', 'engagementRate', 'revisionRequests', 'approvedSubtasks', 'overdueApprovals', 'acknowledgmentPercentage',
                     'thumbsUp', 'thumbsDown'
                 );
             });
@@ -212,7 +232,11 @@ class ReportController extends Controller
                 $taskIds       = $tasks->pluck('id');
                 $totalComments = TaskComment::where('user_id', $dm->id)->whereIn('task_id', $taskIds)->count();
                 $totalReplies  = TaskComment::where('user_id', $dm->id)->whereIn('task_id', $taskIds)->whereNotNull('parent_id')->count();
-                $revisionRate  = $totalComments > 0 ? round(($totalReplies / $totalComments) * 100) : 0;
+                $approvalStatusBySubTask = $this->buildSubTaskApprovalStatusMap($taskIds->all());
+                $revisionMetrics = $this->buildDmRevisionMetrics($taskIds->all(), $today, $approvalStatusBySubTask);
+                $revisionRate = $revisionMetrics['revision_rate'];
+                $unapprovedSubtasks = $revisionMetrics['unapproved_subtasks'];
+                $overdueApprovalSubtasks = $revisionMetrics['overdue_approval_subtasks'];
                 $qualityScore  = $totalTasks > 0
                     ? max(0, min(100, round((($completed - $totalReplies) / $totalTasks) * 100)))
                     : 0;
@@ -220,7 +244,8 @@ class ReportController extends Controller
                 return compact(
                     'dm', 'totalTasks', 'completed', 'completionRate',
                     'overdueTasks', 'recentCompleted',
-                    'totalComments', 'totalReplies', 'revisionRate', 'qualityScore'
+                    'totalComments', 'totalReplies', 'revisionRate', 'qualityScore',
+                    'unapprovedSubtasks', 'overdueApprovalSubtasks'
                 );
             });
 
@@ -233,11 +258,12 @@ class ReportController extends Controller
             ->pluck('user_id');
 
         $clientUserIds = $assignedClientIds->merge($commentingClientIds)->unique();
+        $approvalStatusBySubTask = $this->buildSubTaskApprovalStatusMap($myTaskIds->all());
 
         $clientData = User::where('role', 'client')
             ->whereIn('id', $clientUserIds)
             ->get()
-            ->map(function ($client) use ($myTaskIds, $myProjectIds) {
+            ->map(function ($client) use ($myTaskIds, $myProjectIds, $today, $approvalStatusBySubTask) {
                 $totalComments = TaskComment::where('user_id', $client->id)->whereIn('task_id', $myTaskIds)->count();
                 $totalReplies  = TaskComment::where('user_id', $client->id)->whereIn('task_id', $myTaskIds)->whereNotNull('parent_id')->count();
                 $rootComments  = TaskComment::where('user_id', $client->id)->whereIn('task_id', $myTaskIds)->whereNull('parent_id')->count();
@@ -250,7 +276,16 @@ class ReportController extends Controller
                     ->distinct('parent_id')
                     ->count('parent_id');
 
-                $frictionScore = min(10, round($revisionRequests * 0.5 + ($engagementRate < 20 ? 3 : 1)));
+                $approvalMetrics = $this->buildClientApprovalMetrics(
+                    $client->id,
+                    $today,
+                    $approvalStatusBySubTask,
+                    $myProjectIds->all(),
+                    $myTaskIds->all()
+                );
+                $approvedSubtasks = $approvalMetrics['approved_subtasks'];
+                $overdueApprovals = $approvalMetrics['overdue_approvals'];
+                $acknowledgmentPercentage = $this->buildAcknowledgmentPercentage($approvedSubtasks, $overdueApprovals);
 
                 $thumbsUp   = CommentReaction::where('user_id', $client->id)->where('type', 'up')->count();
                 $thumbsDown = CommentReaction::where('user_id', $client->id)->where('type', 'down')->count();
@@ -259,7 +294,7 @@ class ReportController extends Controller
 
                 return compact(
                     'client', 'totalProjects', 'totalComments', 'totalReplies',
-                    'rootComments', 'engagementRate', 'revisionRequests', 'frictionScore',
+                    'rootComments', 'engagementRate', 'revisionRequests', 'approvedSubtasks', 'overdueApprovals', 'acknowledgmentPercentage',
                     'thumbsUp', 'thumbsDown'
                 );
             });
@@ -325,11 +360,17 @@ class ReportController extends Controller
             $recentCompleted = $userTasks->filter(fn($t) => $t->progress >= 100 && $t->updated_at && $t->updated_at->gte($today->copy()->subDays(30)))->count();
             $totalComments   = TaskComment::where('user_id', $user->id)->count();
             $totalReplies    = TaskComment::where('user_id', $user->id)->whereNotNull('parent_id')->count();
-            $revisionRate    = $totalComments > 0 ? round(($totalReplies / $totalComments) * 100) : 0;
+            $dmTaskIds = $userTasks->pluck('id')->all();
+            $approvalStatusBySubTask = $this->buildSubTaskApprovalStatusMap($dmTaskIds);
+            $revisionMetrics = $this->buildDmRevisionMetrics($dmTaskIds, $today, $approvalStatusBySubTask);
+            $revisionRate = $revisionMetrics['revision_rate'];
+            $unapprovedSubtasks = $revisionMetrics['unapproved_subtasks'];
+            $overdueApprovalSubtasks = $revisionMetrics['overdue_approval_subtasks'];
             $qualityScore    = $totalTasks > 0 ? max(0, min(100, round((($completed - $totalReplies) / $totalTasks) * 100))) : 0;
 
             $kpis = compact('totalTasks', 'completed', 'completionRate', 'overdueTasks',
-                            'recentCompleted', 'totalComments', 'totalReplies', 'revisionRate', 'qualityScore');
+                            'recentCompleted', 'totalComments', 'totalReplies', 'revisionRate', 'qualityScore',
+                            'unapprovedSubtasks', 'overdueApprovalSubtasks');
 
             $tasks = $userTasks->map(function ($t) use ($today) {
                 $overdue = $t->end_date && Carbon::parse($t->end_date)->lt($today) && $t->progress < 100;
@@ -350,13 +391,17 @@ class ReportController extends Controller
             $rootComments    = TaskComment::where('user_id', $user->id)->whereNull('parent_id')->count();
             $engagementRate  = $totalComments > 0 ? round(($totalReplies / $totalComments) * 100) : 0;
             $revisionRequests = TaskComment::where('user_id', $user->id)->whereNotNull('parent_id')->distinct('parent_id')->count('parent_id');
-            $frictionScore   = min(10, round($revisionRequests * 0.5 + ($engagementRate < 20 ? 3 : 1)));
+            $approvalStatusBySubTask = $this->buildSubTaskApprovalStatusMap();
+            $approvalMetrics = $this->buildClientApprovalMetrics($user->id, $today, $approvalStatusBySubTask);
+            $approvedSubtasks = $approvalMetrics['approved_subtasks'];
+            $overdueApprovals = $approvalMetrics['overdue_approvals'];
+            $acknowledgmentPercentage = $this->buildAcknowledgmentPercentage($approvedSubtasks, $overdueApprovals);
 
             $projects      = Project::where('client_id', $user->id)->with(['creator', 'tasks'])->get();
             $totalProjects = $projects->count();
 
             $kpis = compact('totalProjects', 'totalComments', 'totalReplies', 'rootComments',
-                            'engagementRate', 'revisionRequests', 'frictionScore');
+                            'engagementRate', 'revisionRequests', 'approvedSubtasks', 'overdueApprovals', 'acknowledgmentPercentage');
 
             // Comment activity table
             $tasks = $userComments->map(function ($c) {
@@ -370,5 +415,129 @@ class ReportController extends Controller
         }
 
         return view('admin.report-pdf', compact('user', 'role', 'kpis', 'projects', 'tasks'));
+    }
+
+    private function buildSubTaskApprovalStatusMap(array $taskIds = []): array
+    {
+        $query = TaskComment::where('type', 'like', 'subtask_approval:%');
+        if (!empty($taskIds)) {
+            $query->whereIn('task_id', $taskIds);
+        }
+
+        $approvalComments = $query->get(['task_id', 'type', 'updated_at']);
+
+        $approvalStatusBySubTask = [];
+        foreach ($approvalComments as $comment) {
+            if (!preg_match('/^subtask_approval:(\d+):(pending|completed)$/i', (string) $comment->type, $matches)) {
+                continue;
+            }
+
+            $subTaskId = (int) $matches[1];
+            $status = strtolower($matches[2]);
+            $current = $approvalStatusBySubTask[$subTaskId] ?? null;
+
+            if (!$current || $comment->updated_at->gt($current['updated_at'])) {
+                $approvalStatusBySubTask[$subTaskId] = [
+                    'status' => $status,
+                    'updated_at' => $comment->updated_at,
+                ];
+            }
+        }
+
+        return $approvalStatusBySubTask;
+    }
+
+    private function buildClientApprovalMetrics(
+        int $clientId,
+        Carbon $today,
+        array $approvalStatusBySubTask,
+        array $projectIds = [],
+        array $taskIds = []
+    ): array {
+        $query = SubTask::query()
+            ->with('task.project')
+            ->whereHas('task.project', function ($projectQuery) use ($clientId, $projectIds) {
+                $projectQuery->where('client_id', $clientId);
+                if (!empty($projectIds)) {
+                    $projectQuery->whereIn('id', $projectIds);
+                }
+            });
+
+        if (!empty($taskIds)) {
+            $query->whereIn('task_id', $taskIds);
+        }
+
+        $subTasks = $query->get()
+            ->filter(fn ($subTask) => isset($approvalStatusBySubTask[$subTask->id]));
+
+        $approvedSubtasks = $subTasks->filter(function ($subTask) use ($approvalStatusBySubTask) {
+            $status = $approvalStatusBySubTask[$subTask->id]['status'] ?? 'pending';
+            return $status === 'completed' || (bool) $subTask->is_completed;
+        })->count();
+
+        $overdueApprovals = $subTasks->filter(function ($subTask) use ($approvalStatusBySubTask, $today) {
+            $status = $approvalStatusBySubTask[$subTask->id]['status'] ?? 'pending';
+            $isCompleted = $status === 'completed' || (bool) $subTask->is_completed;
+            if ($isCompleted) {
+                return false;
+            }
+
+            return $subTask->end_date && Carbon::parse($subTask->end_date)->lt($today);
+        })->count();
+
+        return [
+            'approved_subtasks' => $approvedSubtasks,
+            'overdue_approvals' => $overdueApprovals,
+        ];
+    }
+
+    private function buildDmRevisionMetrics(array $taskIds, Carbon $today, array $approvalStatusBySubTask): array
+    {
+        if (empty($taskIds)) {
+            return [
+                'revision_rate' => 0,
+                'unapproved_subtasks' => 0,
+                'overdue_approval_subtasks' => 0,
+            ];
+        }
+
+        $approvalSubTasks = SubTask::whereIn('task_id', $taskIds)
+            ->get()
+            ->filter(fn ($subTask) => isset($approvalStatusBySubTask[$subTask->id]));
+
+        $approvalTotal = $approvalSubTasks->count();
+        if ($approvalTotal === 0) {
+            return [
+                'revision_rate' => 0,
+                'unapproved_subtasks' => 0,
+                'overdue_approval_subtasks' => 0,
+            ];
+        }
+
+        $unapprovedSubtasks = $approvalSubTasks->filter(function ($subTask) use ($approvalStatusBySubTask) {
+            return ($approvalStatusBySubTask[$subTask->id]['status'] ?? 'pending') !== 'completed';
+        });
+
+        $overdueApprovalSubtasks = $unapprovedSubtasks->filter(function ($subTask) use ($today) {
+            return $subTask->end_date && Carbon::parse($subTask->end_date)->lt($today);
+        })->count();
+
+        $revisionRate = round((($unapprovedSubtasks->count() + $overdueApprovalSubtasks) / (2 * $approvalTotal)) * 100);
+
+        return [
+            'revision_rate' => (int) max(0, min(100, $revisionRate)),
+            'unapproved_subtasks' => $unapprovedSubtasks->count(),
+            'overdue_approval_subtasks' => $overdueApprovalSubtasks,
+        ];
+    }
+
+    private function buildAcknowledgmentPercentage(int $approvedSubtasks, int $overdueApprovals): int
+    {
+        $totalSignals = $approvedSubtasks + $overdueApprovals;
+        if ($totalSignals <= 0) {
+            return 0;
+        }
+
+        return (int) round(($approvedSubtasks / $totalSignals) * 100);
     }
 }

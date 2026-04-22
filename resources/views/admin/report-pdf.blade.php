@@ -233,7 +233,7 @@
             @php $sc = $kpis['riskScore']; $cls = $sc >= 7 ? 'score-red' : ($sc >= 4 ? 'score-yellow' : 'score-green'); @endphp
             <div class="score-box {{ $cls }}">
                 <div class="score-label">Risk Score</div>
-                <div class="score-value">{{ $sc }}<span class="score-denom">/10</span></div>
+                <div class="score-value">{{ rtrim(rtrim(number_format($sc * 10, 1), '0'), '.') }}<span class="score-denom">%</span></div>
             </div>
         @elseif($role === 'dm')
             @php $sc = $kpis['qualityScore']; $cls = $sc >= 70 ? 'score-green' : ($sc >= 40 ? 'score-yellow' : 'score-red'); @endphp
@@ -242,10 +242,10 @@
                 <div class="score-value">{{ $sc }}<span class="score-denom">%</span></div>
             </div>
         @elseif($role === 'client')
-            @php $sc = $kpis['frictionScore']; $cls = $sc >= 7 ? 'score-red' : ($sc >= 4 ? 'score-yellow' : 'score-green'); @endphp
+            @php $sc = $kpis['acknowledgmentPercentage']; $cls = $sc < 40 ? 'score-red' : ($sc < 70 ? 'score-yellow' : 'score-green'); @endphp
             <div class="score-box {{ $cls }}">
-                <div class="score-label">Friction</div>
-                <div class="score-value">{{ $sc }}<span class="score-denom">/10</span></div>
+                <div class="score-label">Acknowledgment</div>
+                <div class="score-value">{{ $sc }}<span class="score-denom">%</span></div>
             </div>
         @endif
     </div>
@@ -313,7 +313,7 @@
             <div class="kpi-cell">
                 <div class="kpi-label">Revision Rate</div>
                 <div class="kpi-value {{ $kpis['revisionRate'] <= 20 ? 'green' : ($kpis['revisionRate'] <= 50 ? 'yellow' : 'red') }}">{{ $kpis['revisionRate'] }}%</div>
-                <div class="kpi-note">replies / total comments</div>
+                <div class="kpi-note">{{ $kpis['unapprovedSubtasks'] }} unapproved · {{ $kpis['overdueApprovalSubtasks'] }} overdue</div>
             </div>
         @elseif($role === 'client')
             <div class="kpi-cell">
@@ -347,9 +347,14 @@
                 <div class="kpi-note">distinct threads replied</div>
             </div>
             <div class="kpi-cell">
-                <div class="kpi-label">Friction Score</div>
-                <div class="kpi-value {{ $kpis['frictionScore'] <= 3 ? 'green' : ($kpis['frictionScore'] <= 6 ? 'yellow' : 'red') }}">{{ $kpis['frictionScore'] }}<span style="font-size:13px;font-weight:400;color:#94a3b8;">/10</span></div>
-                <div class="kpi-note">{{ $kpis['frictionScore'] <= 3 ? 'Low friction' : ($kpis['frictionScore'] <= 6 ? 'Moderate' : 'High friction') }}</div>
+                <div class="kpi-label">Approve Subtask</div>
+                <div class="kpi-value {{ $kpis['approvedSubtasks'] > 0 ? 'green' : '' }}">{{ $kpis['approvedSubtasks'] }}</div>
+                <div class="kpi-note">approved from comments</div>
+            </div>
+            <div class="kpi-cell">
+                <div class="kpi-label">Overdue Approvals</div>
+                <div class="kpi-value {{ $kpis['overdueApprovals'] === 0 ? 'green' : 'red' }}">{{ $kpis['overdueApprovals'] }}</div>
+                <div class="kpi-note">late pending approval clicks</div>
             </div>
         @endif
     </div>

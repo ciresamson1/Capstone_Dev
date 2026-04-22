@@ -95,24 +95,29 @@
                     </div>
                     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                         @foreach($alerts as $alert)
-                            <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                            @php
+                                $alertItems = (isset($alert['items']) && is_iterable($alert['items'])) ? collect($alert['items']) : collect();
+                            @endphp
+                            <div class="flex h-[290px] flex-col rounded-3xl border border-slate-200 bg-slate-50 p-4">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <p class="text-sm font-semibold text-slate-900">{{ $alert['headline'] }}</p>
-                                        <p class="mt-2 text-sm text-slate-600">{{ $alert['details'] }}</p>
+                                        <p class="mt-2 min-h-[72px] text-sm text-slate-600">{{ $alert['details'] }}</p>
                                     </div>
                                     <span class="shrink-0 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] {{ $alert['color'] === 'red' ? 'bg-rose-100 text-rose-700' : ($alert['color'] === 'yellow' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700') }}">{{ $alert['label'] }}</span>
                                 </div>
-                                @if(isset($alert['items']) && is_iterable($alert['items']))
-                                    <div class="mt-4 space-y-2">
-                                        @foreach($alert['items'] as $item)
+                                <div class="mt-4 min-h-0 flex-1 overflow-y-auto space-y-2 pr-1">
+                                    @if($alertItems->isNotEmpty())
+                                        @foreach($alertItems as $item)
                                             <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
                                                 <p class="font-semibold text-slate-900">{{ $item['project'] }}</p>
                                                 <p>{{ $item['count'] }} overdue task{{ $item['count'] === 1 ? '' : 's' }}</p>
                                             </div>
                                         @endforeach
-                                    </div>
-                                @endif
+                                    @else
+                                        <div class="rounded-2xl bg-white p-3 text-sm text-slate-500 shadow-sm">No detailed items right now.</div>
+                                    @endif
+                                </div>
                             </div>
                         @endforeach
                     </div>
@@ -258,12 +263,40 @@
                         <h3 class="text-lg font-semibold text-slate-900">Client Activity</h3>
                         <p class="text-sm text-slate-500">Pending approvals and recent feedback.</p>
                         <div class="mt-6 space-y-4">
-                            <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                                <div class="flex items-center justify-between">
-                                    <p class="text-sm text-slate-500">Pending approvals</p>
-                                    <span class="rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-700">{{ $clientActivity['pendingApprovals'] }}</span>
+                            <div class="rounded-3xl bg-slate-50 p-4">
+                                <h4 class="text-sm font-semibold text-slate-900">Subtask approvals</h4>
+                                <div class="mt-4 space-y-3">
+                                    @forelse($clientActivity['pendingApprovalCards'] ?? [] as $card)
+                                        <div class="rounded-3xl border border-rose-200 bg-white p-4">
+                                            <div class="flex items-center justify-between gap-3">
+                                                <p class="text-sm font-semibold text-slate-900">{{ $card['subtask_code'] }} · {{ $card['subtask_title'] }}</p>
+                                                <span class="rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-700">Not Yet Approve</span>
+                                            </div>
+                                            <p class="mt-2 text-xs text-slate-500">Task: {{ $card['task_title'] }}</p>
+                                            <p class="text-xs text-slate-500">Project: {{ $card['project'] }}</p>
+                                            @if(!empty($card['task_url']))
+                                                <a href="{{ $card['task_url'] }}" class="mt-3 inline-flex items-center rounded-full bg-brand-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-brand-600">View Task Card</a>
+                                            @endif
+                                        </div>
+                                    @empty
+                                        <p class="text-sm text-slate-500">No pending subtask approvals.</p>
+                                    @endforelse
+
+                                    @forelse($clientActivity['completedApprovalCards'] ?? [] as $card)
+                                        <div class="rounded-3xl border border-emerald-200 bg-white p-4">
+                                            <div class="flex items-center justify-between gap-3">
+                                                <p class="text-sm font-semibold text-slate-900">{{ $card['subtask_code'] }} · {{ $card['subtask_title'] }}</p>
+                                                <span class="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">Completed</span>
+                                            </div>
+                                            <p class="mt-2 text-xs text-slate-500">Task: {{ $card['task_title'] }}</p>
+                                            <p class="text-xs text-slate-500">Project: {{ $card['project'] }}</p>
+                                            @if(!empty($card['task_url']))
+                                                <a href="{{ $card['task_url'] }}" class="mt-3 inline-flex items-center rounded-full bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-600">View Completed Card</a>
+                                            @endif
+                                        </div>
+                                    @empty
+                                    @endforelse
                                 </div>
-                                <p class="mt-3 text-sm text-slate-600">Currently awaiting client review and confirmation.</p>
                             </div>
                             <div class="rounded-3xl bg-slate-50 p-4">
                                 <h4 class="text-sm font-semibold text-slate-900">Recent client comments</h4>
@@ -519,7 +552,7 @@
         const attach = () => {
             if (!window.Echo) return false;
             window.Echo.channel('dashboard').listen('.dashboard.updated', () => {
-                window.location.reload();
+                // Keep the current page stable; project/task cards update via role pages.
             });
             return true;
         };
@@ -535,9 +568,6 @@
     }
 
     registerDashboardReloadListener();
-
-    // Fallback refresh if event delivery fails
-    setInterval(() => window.location.reload(), 15000);
 </script>
 
 <script>

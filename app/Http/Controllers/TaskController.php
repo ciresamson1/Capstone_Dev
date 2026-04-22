@@ -98,7 +98,15 @@ class TaskController extends Controller
         ]);
 
         $project = Project::find($projectId);
-        ActivityLog::record('created_task', 'Created task "' . $request->title . '" in project "' . ($project?->name ?? 'Unknown') . '"', $task);
+        $projectIdentifier = $project?->unique_id
+            ? $project->name . ' [' . $project->unique_id . ']'
+            : ($project?->name ?? 'Unknown');
+
+        ActivityLog::record(
+            'created_task',
+            'Created task "' . $task->title . '" [' . $task->unique_id . '] in project "' . $projectIdentifier . '"',
+            $task
+        );
 
         Cache::forget('admin_dashboard_data');
         Cache::forget('admin_dashboard_kpi_cards');
@@ -187,6 +195,14 @@ class TaskController extends Controller
         ]);
 
         $oldProgress = $task->progress;
+        $requestedProgress = (int) $request->progress;
+
+        $normalizedProgress = match ($request->status) {
+            'completed' => 100,
+            'pending' => 0,
+            'in_progress' => ($requestedProgress > 0 && $requestedProgress < 100) ? $requestedProgress : 50,
+            default => $requestedProgress,
+        };
 
         $task->update([
             'title'       => $request->title,
@@ -194,7 +210,7 @@ class TaskController extends Controller
             'assigned_to' => $request->assigned_to ?: null,
             'start_date'  => $request->start_date,
             'end_date'    => $request->end_date,
-            'progress'    => $request->status === 'completed' ? 100 : $request->progress,
+            'progress'    => $normalizedProgress,
             'status'      => $request->status,
         ]);
 
@@ -233,6 +249,7 @@ class TaskController extends Controller
     {
         $task = Task::with([
             'assignedTo',
+            'subTasks',
             'comments' => function ($q) {
                 $q->with(['user', 'reactions', 'replies.user', 'replies.reactions']);
             },
@@ -243,5 +260,25 @@ class TaskController extends Controller
         }
 
         return view('projects._task-card', compact('task'));
+    }
+
+    public function snapshot($projectId)
+    {
+        Project::findOrFail($projectId);
+
+        $tasks = Task::where('project_id', $projectId)
+            ->orderBy('id')
+            ->get(['id', 'progress', 'status', 'updated_at'])
+            ->map(function ($task) {
+                return [
+                    'id' => $task->id,
+                    'progress' => (int) $task->progress,
+                    'status' => $task->status ?? 'pending',
+                    'updated_at' => optional($task->updated_at)->toISOString(),
+                ];
+            })
+            ->values();
+
+        return response()->json($tasks);
     }
 }

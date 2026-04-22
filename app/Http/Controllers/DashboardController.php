@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Project;
+use App\Models\SubTask;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\ProgressLog;
@@ -31,6 +32,10 @@ class DashboardController extends Controller
 
         if ($role === 'client') {
             return redirect()->route('client.dashboard');
+        }
+
+        if ($role === 'special_pm') {
+            return redirect()->route('special-pm.dashboard');
         }
 
         // other roles have no dedicated dashboard
@@ -236,10 +241,13 @@ class DashboardController extends Controller
                   ->orWhereBetween('progress', [1, 99]);
             })
             ->count();
-        $overdueTasks    = Task::whereIn('project_id', $myProjectIds)
+        $overduePendingApprovals = SubTask::whereHas('task', function ($q) use ($myProjectIds) {
+                $q->whereIn('project_id', $myProjectIds);
+            })
             ->whereDate('end_date', '<', $today)
-            ->where('status', '!=', 'completed')
-            ->where('progress', '<', 100)
+            ->where(function ($q) {
+                $q->whereNull('is_completed')->orWhere('is_completed', false);
+            })
             ->count();
         $completionRate  = $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100) : 0;
 
@@ -267,10 +275,10 @@ class DashboardController extends Controller
             ],
             [
                 'title' => 'Overdue Tasks',
-                'value' => $overdueTasks,
-                'color' => $overdueTasks > 0 ? 'red' : 'green',
+                'value' => $overduePendingApprovals,
+                'color' => $overduePendingApprovals > 0 ? 'red' : 'green',
                 'url'   => route('client.tasks.index'),
-                'note'  => 'Past due date',
+                'note'  => 'Overdue subtasks awaiting approval',
             ],
             [
                 'title' => 'Overall Completion',
@@ -699,10 +707,72 @@ class DashboardController extends Controller
             ->values()
             ->toArray();
 
-        $pendingApprovals = Task::whereHas('comments.user', fn ($q) => $q->where('role', 'client'))
-            ->whereIn('project_id', $myProjectIds)
-            ->where('progress', '<', 100)
-            ->count();
+        $approvalComments = TaskComment::where('type', 'like', 'subtask_approval:%')
+            ->whereHas('task', fn ($q) => $q->whereIn('project_id', $myProjectIds))
+            ->get(['task_id', 'type', 'updated_at']);
+
+        $approvalStatusBySubTask = [];
+        foreach ($approvalComments as $comment) {
+            if (!preg_match('/^subtask_approval:(\d+):(pending|completed)$/i', (string) $comment->type, $matches)) {
+                continue;
+            }
+
+            $subTaskId = (int) $matches[1];
+            $status = strtolower($matches[2]);
+            $current = $approvalStatusBySubTask[$subTaskId] ?? null;
+
+            if (!$current || $comment->updated_at->gt($current['updated_at'])) {
+                $approvalStatusBySubTask[$subTaskId] = [
+                    'status' => $status,
+                    'updated_at' => $comment->updated_at,
+                ];
+            }
+        }
+
+        $projectShowRoute = auth()->user()->role === 'dm' ? 'dm.projects.show' : 'projects.show';
+
+        $approvalCards = SubTask::with(['task.project'])
+            ->whereHas('task', fn ($q) => $q->whereIn('project_id', $myProjectIds))
+            ->orderByDesc('updated_at')
+            ->get()
+            ->filter(function ($subTask) use ($approvalStatusBySubTask) {
+                return isset($approvalStatusBySubTask[$subTask->id]);
+            })
+            ->map(function ($subTask) use ($approvalStatusBySubTask, $projectShowRoute) {
+                $approvalState = $approvalStatusBySubTask[$subTask->id] ?? null;
+                $isCompleted = (bool) $subTask->is_completed || ($approvalState['status'] ?? 'pending') === 'completed';
+
+                return [
+                    'subtask_id' => $subTask->id,
+                    'subtask_code' => $subTask->unique_code,
+                    'subtask_title' => $subTask->title,
+                    'task_title' => $subTask->task?->title ?? 'Unknown Task',
+                    'project' => $subTask->task?->project?->name ?? 'Unknown Project',
+                    'project_id' => $subTask->task?->project?->id,
+                    'task_id' => $subTask->task_id,
+                    'status' => $isCompleted ? 'completed' : 'pending',
+                    'label' => $isCompleted ? 'Completed' : 'Not Yet Approved',
+                    'updated_at' => optional($approvalState['updated_at'] ?? $subTask->updated_at)?->diffForHumans(),
+                    'task_url' => ($subTask->task?->project?->id && $subTask->task_id)
+                        ? route($projectShowRoute, $subTask->task->project->id) . '#task-wrapper-' . $subTask->task_id
+                        : null,
+                ];
+            })
+            ->values();
+
+        $pendingApprovalCards = $approvalCards
+            ->where('status', 'pending')
+            ->take(4)
+            ->values()
+            ->toArray();
+
+        $completedApprovalCards = $approvalCards
+            ->where('status', 'completed')
+            ->take(4)
+            ->values()
+            ->toArray();
+
+        $pendingApprovals = $approvalCards->where('status', 'pending')->count();
 
         $revisionCycles = TaskComment::selectRaw('projects.name as project_name, count(task_comments.id) as cycles')
             ->join('tasks', 'tasks.id', '=', 'task_comments.task_id')
@@ -722,6 +792,8 @@ class DashboardController extends Controller
         return [
             'recentComments'   => $recentComments,
             'pendingApprovals' => $pendingApprovals,
+            'pendingApprovalCards' => $pendingApprovalCards,
+            'completedApprovalCards' => $completedApprovalCards,
             'revisionCycles'   => $revisionCycles,
         ];
     }

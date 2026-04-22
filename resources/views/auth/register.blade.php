@@ -45,7 +45,7 @@
                     </div>
                     <div class="md:col-span-2">
                         <label class="mb-2 block text-sm font-semibold text-slate-700">Company</label>
-                        <input type="text" name="company" value="{{ old('company') }}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-50" placeholder="Your company" required>
+                        <input type="text" name="company" value="{{ old('company', request('company')) }}" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-50" placeholder="Your company" required>
                     </div>
                     <div class="md:col-span-2">
                         <label class="mb-2 block text-sm font-semibold text-slate-700">Email</label>

@@ -158,7 +158,7 @@
                                         <p class="mt-1 text-2xl font-bold {{ $row['revisionRate'] <= 20 ? 'text-emerald-700' : ($row['revisionRate'] <= 50 ? 'text-amber-700' : 'text-rose-700') }}">
                                             {{ $row['revisionRate'] }}%
                                         </p>
-                                        <p class="text-[11px] text-slate-400 mt-0.5">replies / total comments</p>
+                                        <p class="text-[11px] text-slate-400 mt-0.5">{{ $row['unapprovedSubtasks'] }} unapproved · {{ $row['overdueApprovalSubtasks'] }} overdue</p>
                                     </div>
                                 </div>
                                 {{-- Download button --}}
@@ -198,19 +198,19 @@
                                             <div class="text-xs text-slate-400">{{ $row['client']->company ?? 'Client' }}</div>
                                         </div>
                                     </div>
-                                    {{-- Friction score --}}
+                                    {{-- Acknowledgment percentage --}}
                                     <div class="rounded-2xl border px-3 py-2 text-center min-w-[80px]
-                                        @if($row['frictionScore'] >= 7) border-rose-200 bg-rose-50
-                                        @elseif($row['frictionScore'] >= 4) border-amber-200 bg-amber-50
+                                        @if($row['acknowledgmentPercentage'] < 40) border-rose-200 bg-rose-50
+                                        @elseif($row['acknowledgmentPercentage'] < 70) border-amber-200 bg-amber-50
                                         @else border-emerald-200 bg-emerald-50 @endif">
                                         <div class="text-[10px] font-semibold uppercase tracking-wider
-                                            @if($row['frictionScore'] >= 7) text-rose-500
-                                            @elseif($row['frictionScore'] >= 4) text-amber-500
-                                            @else text-emerald-500 @endif">Friction</div>
+                                            @if($row['acknowledgmentPercentage'] < 40) text-rose-500
+                                            @elseif($row['acknowledgmentPercentage'] < 70) text-amber-500
+                                            @else text-emerald-500 @endif">Acknowledgment</div>
                                         <div class="text-lg font-bold
-                                            @if($row['frictionScore'] >= 7) text-rose-700
-                                            @elseif($row['frictionScore'] >= 4) text-amber-700
-                                            @else text-emerald-700 @endif">{{ $row['frictionScore'] }}<span class="text-xs font-normal">/10</span></div>
+                                            @if($row['acknowledgmentPercentage'] < 40) text-rose-700
+                                            @elseif($row['acknowledgmentPercentage'] < 70) text-amber-700
+                                            @else text-emerald-700 @endif">{{ $row['acknowledgmentPercentage'] }}<span class="text-xs font-normal">%</span></div>
                                     </div>
                                 </div>
 
@@ -260,14 +260,19 @@
                                     </div>
 
                                     <div class="rounded-2xl bg-slate-50 p-3">
-                                        <p class="text-[11px] text-slate-500">Friction Score</p>
-                                        <p class="mt-1 text-2xl font-bold {{ $row['frictionScore'] <= 3 ? 'text-emerald-700' : ($row['frictionScore'] <= 6 ? 'text-amber-700' : 'text-rose-700') }}">
-                                            {{ $row['frictionScore'] }}<span class="text-base font-normal text-slate-400">/10</span>
+                                        <p class="text-[11px] text-slate-500">Approve Subtask</p>
+                                        <p class="mt-1 text-2xl font-bold {{ $row['approvedSubtasks'] > 0 ? 'text-emerald-700' : 'text-slate-700' }}">
+                                            {{ $row['approvedSubtasks'] }}
                                         </p>
-                                        <p class="text-[11px]
-                                            {{ $row['frictionScore'] <= 3 ? 'text-emerald-500' : ($row['frictionScore'] <= 6 ? 'text-amber-500' : 'text-rose-500') }} mt-0.5">
-                                            {{ $row['frictionScore'] <= 3 ? 'Low friction' : ($row['frictionScore'] <= 6 ? 'Moderate' : 'High friction') }}
+                                        <p class="text-[11px] text-slate-400 mt-0.5">approved from comments</p>
+                                    </div>
+
+                                    <div class="rounded-2xl bg-slate-50 p-3">
+                                        <p class="text-[11px] text-slate-500">Overdue Approvals</p>
+                                        <p class="mt-1 text-2xl font-bold {{ $row['overdueApprovals'] === 0 ? 'text-emerald-700' : 'text-rose-700' }}">
+                                            {{ $row['overdueApprovals'] }}
                                         </p>
+                                        <p class="text-[11px] text-slate-400 mt-0.5">late pending approval clicks</p>
                                     </div>
                                 </div>
 

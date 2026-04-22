@@ -27,6 +27,7 @@ class TaskCommentCreated implements ShouldBroadcastNow
             'user_name' => $comment->user->name,
             'user_role' => $comment->user->role,
             'message' => $comment->message,
+            'type' => $comment->type,
             'link_url' => $comment->link_url,
             'attachment' => $comment->attachment,
             'created_at' => $comment->created_at->toISOString(),

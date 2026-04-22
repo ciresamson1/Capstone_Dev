@@ -148,6 +148,7 @@
                         <select name="role" class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
                             <option value="admin">Admin</option>
                             <option value="pm">Project Manager</option>
+                            <option value="special_pm">Special PM</option>
                             <option value="dm">Digital Marketer</option>
                             <option value="client">Client</option>
                         </select>
@@ -198,6 +199,7 @@
                     <select name="role" id="edit_role" required class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-900 focus:border-sky-400 focus:outline-none">
                         <option value="admin">Admin</option>
                         <option value="pm">Project Manager</option>
+                        <option value="special_pm">Special PM</option>
                         <option value="dm">Digital Marketer</option>
                         <option value="client">Client</option>
                     </select>

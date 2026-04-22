@@ -93,24 +93,29 @@
                     </div>
                     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                         @foreach($alerts as $alert)
-                            <div class="rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                            @php
+                                $alertItems = (isset($alert['items']) && is_iterable($alert['items'])) ? collect($alert['items']) : collect();
+                            @endphp
+                            <div class="flex h-[290px] flex-col rounded-3xl border border-slate-200 bg-slate-50 p-4">
                                 <div class="flex items-start justify-between gap-3">
                                     <div class="min-w-0">
                                         <p class="text-sm font-semibold text-slate-900">{{ $alert['headline'] }}</p>
-                                        <p class="mt-2 text-sm text-slate-600">{{ $alert['details'] }}</p>
+                                        <p class="mt-2 min-h-[72px] text-sm text-slate-600">{{ $alert['details'] }}</p>
                                     </div>
                                     <span class="shrink-0 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] {{ $alert['color'] === 'red' ? 'bg-rose-100 text-rose-700' : ($alert['color'] === 'yellow' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700') }}">{{ $alert['label'] }}</span>
                                 </div>
-                                @if(isset($alert['items']) && is_iterable($alert['items']))
-                                    <div class="mt-4 space-y-2">
-                                        @foreach($alert['items'] as $item)
+                                <div class="mt-4 min-h-0 flex-1 overflow-y-auto space-y-2 pr-1">
+                                    @if($alertItems->isNotEmpty())
+                                        @foreach($alertItems as $item)
                                             <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
                                                 <p class="font-semibold text-slate-900">{{ $item['project'] }}</p>
                                                 <p>{{ $item['summary'] }}</p>
                                             </div>
                                         @endforeach
-                                    </div>
-                                @endif
+                                    @else
+                                        <div class="rounded-2xl bg-white p-3 text-sm text-slate-500 shadow-sm">No detailed items right now.</div>
+                                    @endif
+                                </div>
                             </div>
                         @endforeach
                     </div>
@@ -416,7 +421,7 @@
         const attach = () => {
             if (!window.Echo) return false;
             window.Echo.channel('dashboard').listen('.dashboard.updated', () => {
-                window.location.reload();
+                // Keep the current page stable; project/task cards update via role pages.
             });
             return true;
         };
@@ -432,9 +437,6 @@
     }
 
     registerDashboardReloadListener();
-
-    // Fallback refresh if event delivery fails
-    setInterval(() => window.location.reload(), 15000);
 </script>
 
 <script>
