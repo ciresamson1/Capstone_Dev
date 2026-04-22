@@ -4,6 +4,7 @@
     $taskProgress     = $task->progress;
     $taskEndDate      = $task->end_date ? Carbon::parse($task->end_date) : null;
     $taskOverdue      = $taskEndDate && $taskEndDate->lt($today) && $taskProgress < 100;
+    $taskCompleted    = $taskProgress >= 100 || ($task->status ?? null) === 'completed';
     $taskComments     = $task->comments->whereNull('parent_id')->sortBy('created_at');
     $lastComment      = $taskComments->last();
     $hasRecentComment = $lastComment && $lastComment->created_at->gt(now()->subHours(24));
@@ -11,13 +12,14 @@
     $isClientRole     = strtolower((string) auth()->user()->role) === 'client';
     $messagePlaceholder = $isClientRole
         ? 'Write a message...'
-        : 'Write a message... (/subtask or /edit-subtask)';
+        : 'Write a message... (/subtask, /edit-subtask, or /resend)';
     $replyPlaceholder = $isClientRole
         ? 'Write a reply...'
-        : 'Write a reply... (/subtask or /edit-subtask)';
+        : 'Write a reply... (/subtask, /edit-subtask, or /resend)';
+    $canToggleCommentEmail = in_array(strtolower((string) auth()->user()->role), ['admin', 'pm'], true);
 @endphp
 
-<div id="task-wrapper-{{ $task->id }}" class="mb-5 overflow-hidden rounded-2xl shadow-sm border {{ $taskOverdue ? 'border-rose-200' : ($taskProgress >= 100 ? 'border-emerald-200' : 'border-slate-200') }}">
+<div id="task-wrapper-{{ $task->id }}" data-end-date="{{ $task->end_date ?? '' }}" data-comments-locked="{{ $taskCompleted ? '1' : '0' }}" class="mb-5 overflow-hidden rounded-2xl shadow-sm border {{ $taskOverdue ? 'border-rose-200' : ($taskProgress >= 100 ? 'border-emerald-200' : 'border-slate-200') }}">
 
     {{-- ── LIGHT HEADER ── --}}
     <div id="task-header-{{ $task->id }}" class="{{ $headerBg }} p-5">
@@ -78,6 +80,16 @@
                 @endphp
                 <span id="status-badge-{{ $task->id }}" class="inline-flex rounded-full px-3 py-1 text-xs font-semibold {{ $badgeBg }} {{ $badgeText }}">{{ $badgeLabel }}</span>
 
+                @if($canToggleCommentEmail)
+                <button type="button"
+                    id="email-toggle-btn-{{ $task->id }}"
+                    onclick="toggleCommentEmail({{ $task->id }})"
+                    class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold shadow-sm transition {{ $task->comment_email_enabled ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300' }}">
+                    <span class="inline-flex h-1.5 w-1.5 rounded-full {{ $task->comment_email_enabled ? 'bg-sky-500' : 'bg-slate-500' }}"></span>
+                    {{ $task->comment_email_enabled ? 'Email ON' : 'Email OFF' }}
+                </button>
+                @endif
+
                 {{-- Toggle comments button --}}
                 <button type="button" onclick="toggleComments({{ $task->id }})"
                     id="toggle-btn-{{ $task->id }}"
@@ -99,7 +111,8 @@
                         '{{ $task->start_date }}',
                         '{{ $task->end_date }}',
                         {{ $task->progress }},
-                        '{{ $task->status ?? 'pending' }}'
+                        '{{ $task->status ?? 'pending' }}',
+                        '{{ addslashes($task->unique_id ?? '') }}'
                     )"
                     class="flex items-center gap-1.5 rounded-full bg-amber-400 px-3 py-1 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-500">
                     <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 16 16">
@@ -162,11 +175,18 @@
                                     <p class="whitespace-pre-line">{!! $commentMessage !!}</p>
                                 @endif
                                 @if($comment->link_url)
-                                    <a href="{{ $comment->link_url }}" target="_blank" rel="noopener noreferrer"
-                                       class="{{ $comment->message ? 'mt-3' : '' }} inline-flex max-w-full items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold {{ $isMe ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-50' : 'border-sky-200 bg-sky-50 text-sky-700' }} hover:opacity-90">
-                                        <span class="truncate">{{ $comment->link_url }}</span>
-                                        <span aria-hidden="true">↗</span>
-                                    </a>
+                                    @if($comment->type === 'overdue_reminder')
+                                        <a href="{{ $comment->link_url }}" target="_blank" rel="noopener noreferrer"
+                                           class="{{ $comment->message ? 'mt-3' : '' }} inline-flex items-center rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500">
+                                            Answer Survey
+                                        </a>
+                                    @else
+                                        <a href="{{ $comment->link_url }}" target="_blank" rel="noopener noreferrer"
+                                           class="{{ $comment->message ? 'mt-3' : '' }} inline-flex max-w-full items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold {{ $isMe ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-50' : 'border-sky-200 bg-sky-50 text-sky-700' }} hover:opacity-90">
+                                            <span class="truncate">{{ $comment->link_url }}</span>
+                                            <span aria-hidden="true">↗</span>
+                                        </a>
+                                    @endif
                                 @endif
                                 @if($comment->attachment)
                                     <div class="{{ $comment->message || $comment->link_url ? 'mt-3' : '' }} space-y-2">
@@ -205,11 +225,13 @@
                                         {{ $myReact === 'down' ? 'bg-rose-100 text-rose-700 font-semibold' : 'bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600' }}">
                                     👎 <span id="down-count-{{ $comment->id }}">{{ $downs > 0 ? $downs : '' }}</span>
                                 </button>
-                                <button type="button"
-                                    onclick="toggleReplyForm({{ $comment->id }})"
-                                    class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200">
-                                    Reply
-                                </button>
+                                @if(!$taskCompleted)
+                                    <button type="button"
+                                        onclick="toggleReplyForm({{ $comment->id }})"
+                                        class="reply-toggle-btn inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200">
+                                        Reply
+                                    </button>
+                                @endif
                             </div>
                             <div id="replies-{{ $comment->id }}" class="mt-3 space-y-3 border-l border-slate-200/80 pl-4 sm:pl-6">
                                 @foreach($comment->replies as $reply)
@@ -238,11 +260,18 @@
                                                     <p class="whitespace-pre-line">{!! $replyMessage !!}</p>
                                                 @endif
                                                 @if($reply->link_url)
-                                                    <a href="{{ $reply->link_url }}" target="_blank" rel="noopener noreferrer"
-                                                       class="{{ $reply->message ? 'mt-3' : '' }} inline-flex max-w-full items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold {{ $replyIsMe ? 'border-emerald-300 bg-white/60 text-emerald-800' : 'border-sky-200 bg-sky-50 text-sky-700' }} hover:opacity-90">
-                                                        <span class="truncate">{{ $reply->link_url }}</span>
-                                                        <span aria-hidden="true">↗</span>
-                                                    </a>
+                                                    @if($reply->type === 'overdue_reminder')
+                                                        <a href="{{ $reply->link_url }}" target="_blank" rel="noopener noreferrer"
+                                                           class="{{ $reply->message ? 'mt-3' : '' }} inline-flex items-center rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500">
+                                                            Answer Survey
+                                                        </a>
+                                                    @else
+                                                        <a href="{{ $reply->link_url }}" target="_blank" rel="noopener noreferrer"
+                                                           class="{{ $reply->message ? 'mt-3' : '' }} inline-flex max-w-full items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-semibold {{ $replyIsMe ? 'border-emerald-300 bg-white/60 text-emerald-800' : 'border-sky-200 bg-sky-50 text-sky-700' }} hover:opacity-90">
+                                                            <span class="truncate">{{ $reply->link_url }}</span>
+                                                            <span aria-hidden="true">↗</span>
+                                                        </a>
+                                                    @endif
                                                 @endif
                                                 @if($reply->attachment)
                                                     <div class="{{ $reply->message || $reply->link_url ? 'mt-3' : '' }} space-y-2">
@@ -276,29 +305,31 @@
                                     </div>
                                 @endforeach
                             </div>
-                            <form id="reply-form-{{ $comment->id }}"
-                                data-task-id="{{ $task->id }}"
-                                data-parent-id="{{ $comment->id }}"
-                                method="POST"
-                                action="{{ route('tasks.comments.store', $task->id) }}"
-                                class="comment-form-ajax mt-3 hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
-                                @csrf
-                                <input type="hidden" name="parent_id" value="{{ $comment->id }}">
-                                <div class="space-y-2">
-                                    <div class="relative comment-mention-wrapper">
-                                        <input type="text" name="message" placeholder="{{ $replyPlaceholder }}"
-                                            class="mention-input w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
-                                        <ul class="mention-dropdown absolute left-0 right-0 z-50 mt-1 hidden max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-lg"></ul>
+                            @if(!$taskCompleted)
+                                <form id="reply-form-{{ $comment->id }}"
+                                    data-task-id="{{ $task->id }}"
+                                    data-parent-id="{{ $comment->id }}"
+                                    method="POST"
+                                    action="{{ route('tasks.comments.store', $task->id) }}"
+                                    class="comment-form-ajax mt-3 hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                                    @csrf
+                                    <input type="hidden" name="parent_id" value="{{ $comment->id }}">
+                                    <div class="space-y-2">
+                                        <div class="relative comment-mention-wrapper">
+                                            <input type="text" name="message" placeholder="{{ $replyPlaceholder }}"
+                                                class="mention-input w-full rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+                                            <ul class="mention-dropdown absolute left-0 right-0 z-50 mt-1 hidden max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-lg"></ul>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <input type="text" name="link_url" placeholder="Paste a link (optional)"
+                                                class="flex-1 rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+                                            <button type="submit" class="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500">
+                                                Send
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div class="flex items-center gap-2">
-                                        <input type="text" name="link_url" placeholder="Paste a link (optional)"
-                                            class="flex-1 rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
-                                        <button type="submit" class="inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-500">
-                                            Send
-                                        </button>
-                                    </div>
-                                </div>
-                            </form>
+                                </form>
+                            @endif
                         </div>
                         @if($isMe)
                             <span class="ml-2 mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">
@@ -313,26 +344,32 @@
         </div>
 
         {{-- Input bar --}}
-        <form id="comment-form-{{ $task->id }}" data-task-id="{{ $task->id }}" method="POST" action="{{ route('tasks.comments.store', $task->id) }}"
-            class="comment-form-ajax border-t border-slate-100 px-4 py-3">
-            @csrf
-            <div class="space-y-2">
-                <div class="relative comment-mention-wrapper">
-                    <input type="text" name="message" placeholder="{{ $messagePlaceholder }}"
-                        class="mention-input w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
-                    <ul class="mention-dropdown absolute left-0 right-0 z-50 mt-1 hidden max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-lg"></ul>
+        @if(!$taskCompleted)
+            <form id="comment-form-{{ $task->id }}" data-task-id="{{ $task->id }}" method="POST" action="{{ route('tasks.comments.store', $task->id) }}"
+                class="comment-form-ajax border-t border-slate-100 px-4 py-3">
+                @csrf
+                <div class="space-y-2">
+                    <div class="relative comment-mention-wrapper">
+                        <input type="text" name="message" placeholder="{{ $messagePlaceholder }}"
+                            class="mention-input w-full rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+                        <ul class="mention-dropdown absolute left-0 right-0 z-50 mt-1 hidden max-h-48 overflow-auto rounded-2xl border border-slate-200 bg-white shadow-lg"></ul>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="text" name="link_url" placeholder="Paste a link (optional)"
+                            class="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
+                        <button type="submit" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-500">
+                            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <input type="text" name="link_url" placeholder="Paste a link (optional)"
-                        class="flex-1 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20">
-                    <button type="submit" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm transition hover:bg-emerald-500">
-                        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
-                        </svg>
-                    </button>
-                </div>
+            </form>
+        @else
+            <div class="border-t border-slate-100 px-4 py-3 text-xs font-medium text-slate-500">
+                Task is completed. Comment and link inputs are locked.
             </div>
-        </form>
+        @endif
     </div>
 
 </div>

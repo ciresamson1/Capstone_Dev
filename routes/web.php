@@ -5,6 +5,7 @@ use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AdminDashboardController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\GanttController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SpecialPmDashboardController;
@@ -25,6 +26,9 @@ Route::middleware(['auth'])->group(function () {
 
     // PM dedicated dashboard
     Route::get('/pm/dashboard', [DashboardController::class, 'index'])->middleware('role:pm')->name('pm.dashboard');
+
+    // Admin/PM portfolio gantt
+    Route::get('/gantt', [GanttController::class, 'index'])->middleware('role:admin,pm')->name('gantt.index');
 
     // DM dedicated dashboard
     Route::get('/dm/dashboard', [DashboardController::class, 'dmIndex'])->middleware('role:dm')->name('dm.dashboard');
@@ -105,6 +109,10 @@ Route::middleware(['auth'])->group(function () {
         [TaskController::class, 'toggle']
     );
 
+    Route::post('/tasks/{id}/comment-email-toggle',
+        [TaskController::class, 'toggleCommentEmail']
+    )->middleware('role:admin,pm')->name('tasks.comment-email-toggle');
+
     Route::put('/tasks/{id}',
         [TaskController::class, 'update']
     )->name('tasks.update');
@@ -130,6 +138,10 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/tasks/{task}/subtasks',
         [SubTaskController::class, 'store']
     )->middleware('role:admin,pm,dm')->name('tasks.subtasks.store');
+
+    Route::post('/tasks/{task}/subtasks/resend',
+        [SubTaskController::class, 'resend']
+    )->middleware('role:admin,pm,dm')->name('tasks.subtasks.resend');
 
     Route::post('/subtasks/{subTask}/approve',
         [SubTaskController::class, 'approve']

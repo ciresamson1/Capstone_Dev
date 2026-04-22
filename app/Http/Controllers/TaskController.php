@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\DashboardUpdated;
 use App\Events\TaskChanged;
+use App\Mail\TaskCompletedMail;
 use App\Models\Task;
 use App\Models\ActivityLog;
 use App\Models\ProgressLog;
@@ -11,6 +12,7 @@ use App\Models\Project;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Mail;
 
 class TaskController extends Controller
 {
@@ -97,6 +99,10 @@ class TaskController extends Controller
             'progress'    => $request->input('status') === 'completed' ? 100 : ($request->input('status') === 'in_progress' ? 50 : 0),
         ]);
 
+        if ((int) $task->progress >= 100) {
+            $this->notifyClientTaskCompleted($task);
+        }
+
         $project = Project::find($projectId);
         $projectIdentifier = $project?->unique_id
             ? $project->name . ' [' . $project->unique_id . ']'
@@ -156,6 +162,10 @@ class TaskController extends Controller
         $task->status   = $task->progress == 100 ? 'completed' : 'pending';
         $task->save();
 
+        if ((int) $oldProgress < 100 && (int) $task->progress >= 100) {
+            $this->notifyClientTaskCompleted($task);
+        }
+
         ProgressLog::create([
             'type'         => 'task',
             'reference_id' => $task->id,
@@ -182,9 +192,30 @@ class TaskController extends Controller
         return response()->json(['status' => 'ok', 'progress' => $task->progress]);
     }
 
+    public function toggleCommentEmail($id)
+    {
+        $task = Task::findOrFail($id);
+
+        $task->comment_email_enabled = !((bool) $task->comment_email_enabled);
+        $task->save();
+
+        ActivityLog::record(
+            'updated_task',
+            'Turned ' . ($task->comment_email_enabled ? 'on' : 'off') . ' comment email notifications for task "' . $task->title . '"',
+            $task
+        );
+
+        return response()->json([
+            'status' => 'ok',
+            'comment_email_enabled' => (bool) $task->comment_email_enabled,
+        ]);
+    }
+
     public function update(Request $request, $id)
     {
         $task = Task::findOrFail($id);
+        $wasCompleted = (int) $task->progress >= 100 || $task->status === 'completed';
+        $role = strtolower((string) auth()->user()?->role);
 
         $request->validate([
             'title'      => 'required|string|max:255',
@@ -192,6 +223,7 @@ class TaskController extends Controller
             'end_date'   => 'required|date|after_or_equal:start_date',
             'progress'   => 'required|integer|min:0|max:100',
             'status'     => 'required|in:pending,in_progress,completed',
+            'edit_reason' => in_array($role, ['admin', 'pm'], true) ? 'required|string|max:500' : 'nullable|string|max:500',
         ]);
 
         $oldProgress = $task->progress;
@@ -214,6 +246,11 @@ class TaskController extends Controller
             'status'      => $request->status,
         ]);
 
+        $isNowCompleted = (int) $task->progress >= 100 || $task->status === 'completed';
+        if (!$wasCompleted && $isNowCompleted) {
+            $this->notifyClientTaskCompleted($task);
+        }
+
         if ($task->progress !== $oldProgress) {
             ProgressLog::create([
                 'type'         => 'task',
@@ -224,7 +261,11 @@ class TaskController extends Controller
             ]);
         }
 
-        ActivityLog::record('updated_task', 'Updated task "' . $task->title . '"', $task);
+        $editReason = trim((string) $request->input('edit_reason', 'No reason provided'));
+        $taskIdentifier = $task->unique_id
+            ? '"' . $task->title . '" [' . $task->unique_id . ']'
+            : '"' . $task->title . '"';
+        ActivityLog::record('updated_task', 'Updated task ' . $taskIdentifier . '. Reason: ' . $editReason, $task);
 
         Cache::forget('admin_dashboard_data');
         Cache::forget('admin_dashboard_kpi_cards');
@@ -280,5 +321,40 @@ class TaskController extends Controller
             ->values();
 
         return response()->json($tasks);
+    }
+
+    private function notifyClientTaskCompleted(Task $task): void
+    {
+        $role = strtolower((string) auth()->user()?->role);
+        if (!in_array($role, ['admin', 'pm'], true)) {
+            return;
+        }
+
+        $task->loadMissing(['project.client', 'project.creator', 'assignedTo']);
+        $project = $task->project;
+        $client = $project?->client;
+
+        if (!$project || !$client || !$client->email) {
+            return;
+        }
+
+        $pmUser = null;
+        if ($project->creator && strtolower((string) $project->creator->role) === 'pm') {
+            $pmUser = $project->creator;
+        } elseif ($task->assignedTo && strtolower((string) $task->assignedTo->role) === 'pm') {
+            $pmUser = $task->assignedTo;
+        } else {
+            $pmUser = User::where('role', 'pm')->orderBy('id')->first();
+        }
+
+        $pmName = $pmUser?->name ?? 'Project Manager';
+        $pmEmail = $pmUser?->email;
+        $taskUrl = url('/client/projects/' . $project->id . '#task-wrapper-' . $task->id);
+
+        try {
+            Mail::to($client->email)->send(new TaskCompletedMail($task, $taskUrl, $pmName, $pmEmail));
+        } catch (\Throwable $e) {
+            // Mail failure is non-fatal
+        }
     }
 }

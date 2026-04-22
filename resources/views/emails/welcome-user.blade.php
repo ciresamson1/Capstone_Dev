@@ -14,12 +14,21 @@
 
                 {{-- Header --}}
                 <tr>
-                    <td style="background:#0f172a;padding:32px 40px;">
+                    <td style="background:#0f172a;padding:28px 40px;">
                         <table width="100%" cellpadding="0" cellspacing="0">
                             <tr>
                                 <td>
-                                    <div style="display:inline-block;background:#f1f5f9;color:#0f172a;font-weight:bold;font-size:18px;padding:10px 16px;border-radius:10px;">PC</div>
-                                    <span style="color:#94a3b8;font-size:14px;margin-left:12px;">Project Coordination & Management System</span>
+                                    <table cellpadding="0" cellspacing="0">
+                                        <tr>
+                                            <td style="vertical-align:middle;">
+                                                <div style="display:inline-block;background:#4e74fb;color:#ffffff;font-weight:800;font-size:16px;padding:8px 14px;border-radius:8px;letter-spacing:0.05em;">PCMS</div>
+                                            </td>
+                                            <td style="vertical-align:middle;padding-left:14px;">
+                                                <div style="font-size:17px;font-weight:700;color:#ffffff;line-height:1.2;">SGpro.co</div>
+                                                <div style="font-size:11px;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;margin-top:2px;">Project Coordination &amp; Management</div>
+                                            </td>
+                                        </tr>
+                                    </table>
                                 </td>
                             </tr>
                         </table>
@@ -216,7 +225,7 @@
                 <tr>
                     <td style="background:#f8fafc;border-top:1px solid #e2e8f0;padding:20px 40px;">
                         <p style="margin:0;font-size:12px;color:#94a3b8;text-align:center;">
-                            This email was sent by PCMS. If you did not expect this account, please contact your administrator.
+                            SGpro.co &mdash; This email was sent by PCMS. If you did not expect this account, please contact your administrator.
                         </p>
                     </td>
                 </tr>

@@ -262,7 +262,9 @@
 
     function createGanttChart(data, zoomDays) {
         const maxSpan = Math.max(...data.map(item => item.startOffset + item.duration), 7);
+
         if (ganttChart) ganttChart.destroy();
+
         ganttChart = new Chart(ganttCtx, {
             type: 'bar',
             data: {

@@ -24,7 +24,7 @@ class WelcomeUserMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Welcome to PCMS – Your Account is Ready')
+        return $this->subject('SGpro.co – Welcome to PCMS, Your Account is Ready')
             ->view('emails.welcome-user');
     }
 }

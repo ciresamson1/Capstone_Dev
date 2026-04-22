@@ -35,8 +35,8 @@ class TaskCommentMail extends Mailable
         $projectName = $this->comment->task?->project?->name ?? '';
 
         $subject = $projectName
-            ? "{$senderName} commented on \"{$taskTitle}\" — {$projectName}"
-            : "{$senderName} commented on \"{$taskTitle}\"";
+            ? "SGpro.co – {$senderName} commented on \"{$taskTitle}\" ({$projectName})"
+            : "SGpro.co – {$senderName} commented on \"{$taskTitle}\"";
 
         return $this->subject($subject)
             ->view('emails.task-comment');

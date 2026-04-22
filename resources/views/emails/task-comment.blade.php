@@ -8,9 +8,25 @@
     <div style="max-width:600px;margin:40px auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
         {{-- Header --}}
-        <div style="background:#4e74fb;padding:28px 32px;">
-            <p style="margin:0;font-size:13px;color:#dbe2ff;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;">SGpro Project Management</p>
-            <h1 style="margin:8px 0 0;font-size:22px;color:#ffffff;font-weight:700;">New Comment on a Task</h1>
+        <div style="background:#0f172a;padding:28px 32px;">
+            <table cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:16px;">
+                <tr>
+                    <td style="vertical-align:middle;">
+                        <table cellpadding="0" cellspacing="0">
+                            <tr>
+                                <td style="vertical-align:middle;">
+                                    <div style="display:inline-block;background:#4e74fb;color:#ffffff;font-weight:800;font-size:16px;padding:8px 14px;border-radius:8px;letter-spacing:0.05em;">PCMS</div>
+                                </td>
+                                <td style="vertical-align:middle;padding-left:14px;">
+                                    <div style="font-size:17px;font-weight:700;color:#ffffff;line-height:1.2;">SGpro.co</div>
+                                    <div style="font-size:11px;color:#94a3b8;letter-spacing:0.06em;text-transform:uppercase;margin-top:2px;">Project Coordination &amp; Management</div>
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+            <h1 style="margin:0;font-size:20px;color:#ffffff;font-weight:700;">New Comment on a Task</h1>
         </div>
 
         {{-- Body --}}
@@ -71,7 +87,7 @@
             @endif
 
             <hr style="border:none;border-top:1px solid #e2e8f0;margin:0 0 20px;">
-            <p style="margin:0;font-size:12px;color:#94a3b8;">You are receiving this because you are a member of this project. Please do not reply to this email.</p>
+            <p style="margin:0;font-size:12px;color:#94a3b8;">SGpro.co &mdash; You are receiving this because you are a member of this project. Please do not reply to this email.</p>
         </div>
     </div>
 </body>

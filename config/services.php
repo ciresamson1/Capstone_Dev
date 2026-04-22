@@ -42,4 +42,6 @@ return [
         'special_pm_price_id' => env('STRIPE_SPECIAL_PM_PRICE_ID'),
     ],
 
+    'overdue_survey_url' => env('OVERDUE_SURVEY_URL'),
+
 ];

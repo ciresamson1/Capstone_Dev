@@ -17,6 +17,12 @@ class SubTaskController extends Controller
 {
     public function store(Request $request, Task $task)
     {
+        if ((int) $task->progress >= 100 || ($task->status ?? null) === 'completed') {
+            throw ValidationException::withMessages([
+                'message' => 'Task is completed. Comment and link posting is disabled.',
+            ]);
+        }
+
         $role = strtolower((string) auth()->user()->role);
         if (!in_array($role, ['admin', 'pm', 'dm'], true)) {
             throw ValidationException::withMessages([
@@ -29,7 +35,17 @@ class SubTaskController extends Controller
             'description' => 'nullable|string',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
+            'parent_id' => 'nullable|integer|exists:task_comments,id',
         ]);
+
+        $threadParentId = $this->resolveThreadParentId($task->id, $validated['parent_id'] ?? null);
+
+        // Check if there's any pending approval in the task (block all new subtasks if ANY pending exists)
+        if ($this->hasPendingApprovalInTask($task->id)) {
+            throw ValidationException::withMessages([
+                'message' => 'This task has a pending subtask approval waiting for client approval. Wait or use /resend.',
+            ]);
+        }
 
         $subTask = SubTask::create([
             'task_id' => $task->id,
@@ -52,7 +68,7 @@ class SubTaskController extends Controller
             'link_url' => null,
             'attachment' => null,
             'type' => 'subtask_approval:' . $subTask->id . ':pending',
-            'parent_id' => null,
+            'parent_id' => $threadParentId,
         ]);
 
         $approvalComment->load('user', 'task.project');
@@ -98,6 +114,83 @@ class SubTaskController extends Controller
                 'is_completed' => (bool) $subTask->is_completed,
             ],
             'approval_comment' => $this->serializeComment($approvalComment),
+        ]);
+    }
+
+    public function resend(Request $request, Task $task)
+    {
+        if ((int) $task->progress >= 100 || ($task->status ?? null) === 'completed') {
+            throw ValidationException::withMessages([
+                'message' => 'Task is completed. Comment and link posting is disabled.',
+            ]);
+        }
+
+        $role = strtolower((string) auth()->user()->role);
+        if (!in_array($role, ['admin', 'pm', 'dm'], true)) {
+            throw ValidationException::withMessages([
+                'message' => 'Only Admin, PM, and DM can use /resend for subtask approvals.',
+            ]);
+        }
+
+        $validated = $request->validate([
+            'parent_id' => 'nullable|integer|exists:task_comments,id',
+        ]);
+
+        $threadParentId = $this->resolveThreadParentId($task->id, $validated['parent_id'] ?? null);
+
+        $pending = TaskComment::where('task_id', $task->id)
+            ->where('type', 'like', 'subtask_approval:%:pending')
+            ->when(
+                is_null($threadParentId),
+                fn ($query) => $query->whereNull('parent_id'),
+                fn ($query) => $query->where('parent_id', $threadParentId)
+            )
+            ->latest('id')
+            ->first();
+
+        if (!$pending) {
+            throw ValidationException::withMessages([
+                'message' => 'No pending subtask approval found in this thread to resend.',
+            ]);
+        }
+
+        $resentComment = TaskComment::create([
+            'task_id' => $task->id,
+            'user_id' => auth()->id(),
+            'message' => $pending->message,
+            'link_url' => $pending->link_url,
+            'attachment' => $pending->attachment,
+            'type' => $pending->type,
+            'parent_id' => $threadParentId,
+        ]);
+
+        $resentComment->load('user', 'task.project');
+
+        try {
+            broadcast(new TaskCommentCreated($resentComment))->toOthers();
+        } catch (\Throwable $e) {
+            // Broadcast server unavailable — continue processing
+        }
+
+        Cache::forget('admin_dashboard_data');
+        Cache::forget('admin_dashboard_kpi_cards');
+        Cache::forget('admin_dashboard_chart_data');
+
+        try {
+            broadcast(new DashboardUpdated('comment', 'created', $resentComment->id));
+        } catch (\Throwable $e) {
+            // Broadcast server unavailable — continue processing
+        }
+
+        ActivityLog::record(
+            'resent_subtask_approval',
+            'Resent pending subtask approval in task "' . $task->title . '"',
+            $task
+        );
+
+        return response()->json([
+            'status' => 'resent',
+            'approval_comment' => $this->serializeComment($resentComment),
         ]);
     }
 
@@ -299,6 +392,36 @@ class SubTaskController extends Controller
         } while (SubTask::where('unique_code', $candidate)->exists());
 
         return $candidate;
+    }
+
+    private function resolveThreadParentId(int $taskId, ?int $parentId): ?int
+    {
+        if (!$parentId) {
+            return null;
+        }
+
+        $comment = TaskComment::where('task_id', $taskId)->findOrFail($parentId);
+
+        return $comment->parent_id ?: $comment->id;
+    }
+
+    private function hasPendingApprovalInThread(int $taskId, ?int $threadParentId): bool
+    {
+        return TaskComment::where('task_id', $taskId)
+            ->where('type', 'like', 'subtask_approval:%:pending')
+            ->when(
+                is_null($threadParentId),
+                fn ($query) => $query->whereNull('parent_id'),
+                fn ($query) => $query->where('parent_id', $threadParentId)
+            )
+            ->exists();
+    }
+
+    private function hasPendingApprovalInTask(int $taskId): bool
+    {
+        return TaskComment::where('task_id', $taskId)
+            ->where('type', 'like', 'subtask_approval:%:pending')
+            ->exists();
     }
 
     private function serializeComment(TaskComment $comment): array

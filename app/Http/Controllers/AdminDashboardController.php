@@ -327,6 +327,12 @@ class AdminDashboardController extends Controller
                     'color' => $color,
                     'start' => $start->toDateString(),
                     'end' => $end->toDateString(),
+                    'project_start_offset' => $task->project?->start_date
+                        ? max(0, $today->diffInDays(Carbon::parse($task->project->start_date), false))
+                        : $offset,
+                    'project_duration' => ($task->project?->start_date && $task->project?->end_date)
+                        ? max(1, Carbon::parse($task->project->start_date)->diffInDays(Carbon::parse($task->project->end_date)) + 1)
+                        : $duration,
                 ];
             })
             ->values()

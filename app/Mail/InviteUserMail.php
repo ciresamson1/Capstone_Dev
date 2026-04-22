@@ -21,7 +21,7 @@ class InviteUserMail extends Mailable
 
     public function build()
     {
-        return $this->subject('Complete your PCMS account setup')
+        return $this->subject('SGpro.co – Complete your PCMS account setup')
             ->view('emails.invite-user');
     }
 }

@@ -18,6 +18,11 @@ class Task extends Model
         'end_date',
         'progress',
         'status',
+        'comment_email_enabled',
+    ];
+
+    protected $casts = [
+        'comment_email_enabled' => 'boolean',
     ];
 
     protected static function booted()

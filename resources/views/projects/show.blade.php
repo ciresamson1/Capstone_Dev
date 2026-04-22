@@ -74,6 +74,10 @@
                             <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-sky-500 text-white">📁</span>
                             Projects
                         </a>
+                        <a href="{{ route('gantt.index') }}" class="flex items-center gap-3 rounded-3xl px-4 py-3 text-sm font-medium transition hover:bg-slate-800 text-slate-300">
+                            <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-100">📅</span>
+                            Gantt Chart
+                        </a>
                         <a href="{{ route('admin.tasks.index') }}" class="flex items-center gap-3 rounded-3xl px-4 py-3 text-sm font-medium transition hover:bg-slate-800 text-slate-300">
                             <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-100">✅</span>
                             Tasks
@@ -171,7 +175,7 @@
                     </div>
                 </div>
                 <div class="rounded-3xl border border-slate-200 bg-white overflow-hidden">
-                    <div id="gantt" class="min-h-[260px] overflow-x-auto"></div>
+                    <div id="gantt" class="min-h-[260px] overflow-x-auto px-2 pb-5"></div>
                 </div>
             </div>
 
@@ -294,17 +298,30 @@
 {{-- Gantt CSS --}}
 <link rel="stylesheet" href="https://unpkg.com/frappe-gantt/dist/frappe-gantt.css">
 <style>
+    #gantt { scrollbar-gutter: stable both-edges; }
+    #gantt .gantt-container { padding-bottom: 16px; }
     #gantt svg { border-radius: 1rem; }
-    .bar-wrapper.bar-green .bar { fill: #10b981 !important; }
-    .bar-wrapper.bar-yellow .bar { fill: #f59e0b !important; }
-    .bar-wrapper.bar-red    .bar { fill: #ef4444 !important; }
-    .bar-wrapper.bar-grey   .bar { fill: #94a3b8 !important; }
-    .bar-wrapper.bar-orange .bar { fill: #f97316 !important; }
-    svg .bar-green .bar { fill: #10b981 !important; }
-    svg .bar-yellow .bar { fill: #f59e0b !important; }
-    svg .bar-red    .bar { fill: #ef4444 !important; }
-    svg .bar-grey   .bar { fill: #94a3b8 !important; }
-    svg .bar-orange .bar { fill: #f97316 !important; }
+    .bar-wrapper.bar-green  .bar, .bar-wrapper.bar-green  .bar-progress { fill: #10b981 !important; }
+    .bar-wrapper.bar-yellow .bar, .bar-wrapper.bar-yellow .bar-progress { fill: #f59e0b !important; }
+    .bar-wrapper.bar-red    .bar, .bar-wrapper.bar-red    .bar-progress { fill: #ef4444 !important; }
+    .bar-wrapper.bar-grey   .bar, .bar-wrapper.bar-grey   .bar-progress { fill: #94a3b8 !important; }
+    .bar-wrapper.bar-orange .bar, .bar-wrapper.bar-orange .bar-progress { fill: #f97316 !important; }
+    .bar-wrapper.bar-blue   .bar, .bar-wrapper.bar-blue   .bar-progress { fill: #93c5fd !important; }
+    svg .bar-green  .bar, svg .bar-green  .bar-progress { fill: #10b981 !important; }
+    svg .bar-yellow .bar, svg .bar-yellow .bar-progress { fill: #f59e0b !important; }
+    svg .bar-red    .bar, svg .bar-red    .bar-progress { fill: #ef4444 !important; }
+    svg .bar-grey   .bar, svg .bar-grey   .bar-progress { fill: #94a3b8 !important; }
+    svg .bar-orange .bar, svg .bar-orange .bar-progress { fill: #f97316 !important; }
+    svg .bar-blue   .bar, svg .bar-blue   .bar-progress { fill: #93c5fd !important; }
+    .bar-wrapper.bar-blue:hover .bar,
+    .bar-wrapper.bar-blue.active .bar,
+    svg .bar-blue:hover .bar,
+    svg .bar-blue.active .bar,
+    .bar-wrapper.bar-blue .bar-progress,
+    svg .bar-blue .bar-progress {
+        fill: #93c5fd !important;
+        stroke: #93c5fd !important;
+    }
 </style>
 
 <script src="https://unpkg.com/frappe-gantt/dist/frappe-gantt.umd.js"></script>
@@ -345,10 +362,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const canDeleteSubtaskFromComment = ['admin', 'pm'].includes(currentUserRole);
     const dynamicMessagePlaceholder = isClientRole
         ? 'Write a message...'
-        : 'Write a message... (/subtask or /edit-subtask)';
+        : 'Write a message... (/subtask, /edit-subtask, or /resend)';
     const dynamicReplyPlaceholder = isClientRole
         ? 'Write a reply...'
-        : 'Write a reply... (/subtask or /edit-subtask)';
+        : 'Write a reply... (/subtask, /edit-subtask, or /resend)';
     const todayIso = '{{ $today->toDateString() }}';
 
     // ── Comment notification sound ───────────────────────────────────────
@@ -458,6 +475,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ── Gantt ──────────────────────────────────────────────────────────────
     let ganttTasks = [
+        @if($project->start_date && $project->end_date)
+        { id: 'project-span', name: '📅 {{ addslashes($project->name) }}', start: '{{ $project->start_date }}', end: '{{ $project->end_date }}', progress: 0, custom_class: 'bar-blue', task_id: null, is_subtask: false, description: 'Project duration: {{ Carbon::parse($project->start_date)->format("M d, Y") }} → {{ Carbon::parse($project->end_date)->format("M d, Y") }}', is_completed: false, status_label: 'PROJECT TIMELINE' },
+        @endif
         @foreach($project->tasks as $task)
         @php
             $endDate           = Carbon::parse($task->end_date);
@@ -474,23 +494,68 @@ document.addEventListener('DOMContentLoaded', function () {
         @endforeach
     ];
 
+    const projectTimelineStart = @json($project->start_date ? Carbon::parse($project->start_date)->toDateString() : null);
+    const projectTimelineEnd = @json($project->end_date ? Carbon::parse($project->end_date)->toDateString() : null);
+
+    const toDateOnly = (value) => {
+        if (!value) return null;
+        const dt = new Date(`${value}T00:00:00`);
+        return Number.isNaN(dt.getTime()) ? null : dt;
+    };
+
+    const toYmd = (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    const getTimelineBounds = () => {
+        let minDate = toDateOnly(projectTimelineStart);
+        let maxDate = toDateOnly(projectTimelineEnd);
+
+        ganttTasks.forEach((task) => {
+            const start = toDateOnly(task.start);
+            const end = toDateOnly(task.end);
+            if (start && (!minDate || start < minDate)) minDate = start;
+            if (end && (!maxDate || end > maxDate)) maxDate = end;
+        });
+
+        if (!minDate || !maxDate) {
+            const today = new Date();
+            minDate = minDate || today;
+            maxDate = maxDate || today;
+        }
+
+        if (minDate > maxDate) {
+            const swap = minDate;
+            minDate = maxDate;
+            maxDate = swap;
+        }
+
+        return { start: toYmd(minDate), end: toYmd(maxDate) };
+    };
+
     const ganttColorMap = {
         'bar-green': '#10b981',
         'bar-yellow': '#f59e0b',
         'bar-red': '#ef4444',
         'bar-grey': '#94a3b8',
         'bar-orange': '#f97316',
+        'bar-blue': '#93c5fd',
     };
 
     const applyGanttColors = () => {
-        document.querySelectorAll('[class*="bar-green"],[class*="bar-yellow"],[class*="bar-red"],[class*="bar-grey"],[class*="bar-orange"]').forEach((wrapper) => {
+        document.querySelectorAll('[class*="bar-green"],[class*="bar-yellow"],[class*="bar-red"],[class*="bar-grey"],[class*="bar-orange"],[class*="bar-blue"]').forEach((wrapper) => {
             const cls = wrapper.className.baseVal || wrapper.className;
             const color = Object.entries(ganttColorMap).find(([key]) => cls.includes(key))?.[1];
             if (!color) return;
-            const el = wrapper.querySelector('.bar') || wrapper.querySelector('rect');
-            if (!el) return;
-            el.setAttribute('fill', color);
-            el.style.fill = color;
+            ['.bar', '.bar-progress'].forEach(selector => {
+                const el = wrapper.querySelector(selector);
+                if (!el) return;
+                el.setAttribute('fill', color);
+                el.style.fill = color;
+            });
         });
     };
 
@@ -501,6 +566,17 @@ document.addEventListener('DOMContentLoaded', function () {
             .replaceAll('>', '&gt;')
             .replaceAll('"', '&quot;')
             .replaceAll("'", '&#039;');
+
+        if (task.id === 'project-span') {
+            return `
+                <div class="rounded-2xl border border-blue-200 bg-blue-50 p-3 shadow-xl min-w-[220px]">
+                    <p class="text-[11px] font-semibold uppercase tracking-wide text-blue-500">Project Timeline</p>
+                    <p class="mt-1 text-sm font-semibold text-slate-900">${sanitize(task.name || '')}</p>
+                    <p class="mt-1 text-xs text-slate-600">${sanitize(task.description || '')}</p>
+                </div>
+            `;
+        }
+
         const description = (task.description || '').trim() || 'No description provided.';
         const statusLabel = task.status_label || (task.progress >= 100 ? 'COMPLETED' : 'IN PROGRESS');
         const typeLabel = task.is_subtask ? 'Subtask' : 'Task';
@@ -525,10 +601,14 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         ganttRoot.innerHTML = '';
+        const bounds = getTimelineBounds();
         // Recreate chart when task rows change so subtasks can appear immediately.
         new Gantt('#gantt', ganttTasks, {
             view_mode: 'Day',
             readonly: true,
+            start_date: bounds.start,
+            end_date: bounds.end,
+            scroll_to: bounds.start,
             custom_popup_html: buildGanttPopup,
         });
         setTimeout(applyGanttColors, 100);
@@ -658,10 +738,17 @@ document.addEventListener('DOMContentLoaded', function () {
     window.toggleReplyForm = function(commentId) {
         const form = document.getElementById(`reply-form-${commentId}`);
         if (!form) return;
+        const taskId = form.dataset.taskId;
+        if (taskId && isTaskCommentsLocked(taskId)) return;
         form.classList.toggle('hidden');
         if (!form.classList.contains('hidden')) {
             form.querySelector('input[name="message"]')?.focus();
         }
+    };
+
+    const isTaskCommentsLocked = (taskId) => {
+        const wrapper = document.getElementById(`task-wrapper-${taskId}`);
+        return (wrapper?.dataset?.commentsLocked || '0') === '1';
     };
 
     const escapeHtml = (value = '') => value
@@ -671,8 +758,11 @@ document.addEventListener('DOMContentLoaded', function () {
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
 
-    const renderLink = (url, isMe, tone = 'root') => {
+    const renderLink = (url, isMe, tone = 'root', type = '') => {
         if (!url) return '';
+        if (type === 'overdue_reminder') {
+            return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer" class="mt-3 inline-flex items-center rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-500">Answer Survey</a>`;
+        }
         const style = tone === 'reply'
             ? (isMe ? 'border-emerald-300 bg-white/60 text-emerald-800' : 'border-sky-200 bg-sky-50 text-sky-700')
             : (isMe ? 'border-emerald-400/40 bg-emerald-500/10 text-emerald-50' : 'border-sky-200 bg-sky-50 text-sky-700');
@@ -733,7 +823,9 @@ document.addEventListener('DOMContentLoaded', function () {
         </div>`;
     };
 
-    const renderReplyForm = (commentId, taskId) => `<form id="reply-form-${commentId}" data-task-id="${taskId}" data-parent-id="${commentId}" method="POST" action="/tasks/${taskId}/comments" class="comment-form-ajax mt-3 hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    const renderReplyForm = (commentId, taskId) => {
+        if (isTaskCommentsLocked(taskId)) return '';
+        return `<form id="reply-form-${commentId}" data-task-id="${taskId}" data-parent-id="${commentId}" method="POST" action="/tasks/${taskId}/comments" class="comment-form-ajax mt-3 hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <input type="hidden" name="_token" value="{{ csrf_token() }}">
         <input type="hidden" name="parent_id" value="${commentId}">
         <div class="space-y-2">
@@ -744,6 +836,7 @@ document.addEventListener('DOMContentLoaded', function () {
             </div>
         </div>
     </form>`;
+    };
 
     const buildReplyMarkup = (c, isMe) => `
         <div class="comment-reply flex ${isMe ? 'justify-end' : 'justify-start'}" data-comment-id="${c.id}">
@@ -755,7 +848,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 </div>
                 <div class="rounded-2xl px-3.5 py-2.5 text-sm ${isMe ? 'rounded-tr-sm bg-emerald-100 text-emerald-950' : 'rounded-tl-sm border border-slate-200 bg-white text-slate-800'}">
                     ${c.message ? `<p class="whitespace-pre-line">${escapeHtml(normalizeApprovalMessage(c.message, c.type))}</p>` : ''}
-                    ${renderLink(c.link_url, isMe, 'reply')}
+                    ${renderLink(c.link_url, isMe, 'reply', c.type)}
                     ${renderLegacyAttachment(c.attachment, isMe, 'reply')}
                     ${renderApprovalAction(c)}
                 </div>
@@ -764,7 +857,9 @@ document.addEventListener('DOMContentLoaded', function () {
             ${isMe ? `<span class="ml-2 mt-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-[10px] font-bold text-white">${escapeHtml(c.user_name.charAt(0).toUpperCase())}</span>` : ''}
         </div>`;
 
-    const buildThreadMarkup = (c, isMe) => `
+    const buildThreadMarkup = (c, isMe) => {
+        const commentsLocked = isTaskCommentsLocked(c.task_id);
+        return `
         <div class="comment-thread" data-task="${c.task_id}" data-comment-id="${c.id}">
             <div class="comment-bubble flex ${isMe ? 'justify-end' : 'justify-start'}">
                 ${!isMe ? `<span class="mr-2 mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">${escapeHtml(c.user_name.charAt(0).toUpperCase())}</span>` : ''}
@@ -775,13 +870,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     </div>
                     <div class="rounded-2xl px-4 py-2.5 text-sm ${isMe ? 'rounded-tr-sm bg-emerald-600 text-white' : 'rounded-tl-sm border border-slate-200 bg-white text-slate-800'}">
                         ${c.message ? `<p class="whitespace-pre-line">${escapeHtml(normalizeApprovalMessage(c.message, c.type))}</p>` : ''}
-                        ${renderLink(c.link_url, isMe, 'root')}
+                        ${renderLink(c.link_url, isMe, 'root', c.type)}
                         ${renderLegacyAttachment(c.attachment, isMe, 'root')}
                         ${renderApprovalAction(c)}
                     </div>
                     <div class="mt-1.5 flex flex-wrap items-center gap-2 ${isMe ? 'justify-end' : ''}" id="reactions-${c.id}">
                         ${renderReactionButtons(c.id, '').replace(/^<div[^>]*>|<\/div>$/g, '')}
-                        <button type="button" onclick="toggleReplyForm(${c.id})" class="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200">Reply</button>
+                        ${commentsLocked ? '' : `<button type="button" onclick="toggleReplyForm(${c.id})" class="reply-toggle-btn inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-200">Reply</button>`}
                     </div>
                     <div id="replies-${c.id}" class="mt-3 space-y-3 border-l border-slate-200/80 pl-4 sm:pl-6"></div>
                     ${renderReplyForm(c.id, c.task_id)}
@@ -789,6 +884,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 ${isMe ? `<span class="ml-2 mt-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-xs font-bold text-white">${escapeHtml(c.user_name.charAt(0).toUpperCase())}</span>` : ''}
             </div>
         </div>`;
+    };
 
     // ── Comment append helper ─────────────────────────────────────────────
     const appendComment = (c) => {
@@ -970,14 +1066,23 @@ document.addEventListener('DOMContentLoaded', function () {
             titleEl.classList.toggle('text-slate-900', !completed);
         }
         const header = document.getElementById(`task-header-${id}`);
-        if (header) {
-            header.className = `p-5 ${completed ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`;
-        }
         const wrapper = document.getElementById(`task-wrapper-${id}`);
+        const endDateStr = wrapper?.dataset?.endDate;
+        const isOverdue = !completed && endDateStr && new Date(endDateStr) < new Date(new Date().toDateString());
+        if (header) {
+            header.className = `p-5 ${completed ? 'bg-emerald-50 border-emerald-200' : (isOverdue ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200')}`;
+        }
         if (wrapper) {
             wrapper.className = `mb-5 overflow-hidden rounded-2xl shadow-sm border ${
-                completed ? 'border-emerald-200' : 'border-slate-200'
+                completed ? 'border-emerald-200' : (isOverdue ? 'border-rose-200' : 'border-slate-200')
             }`;
+            wrapper.dataset.commentsLocked = completed ? '1' : '0';
+            wrapper.querySelectorAll('.comment-form-ajax').forEach((form) => {
+                form.style.display = completed ? 'none' : '';
+            });
+            wrapper.querySelectorAll('.reply-toggle-btn').forEach((btn) => {
+                btn.style.display = completed ? 'none' : '';
+            });
         }
     };
 
@@ -1224,6 +1329,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const subtaskForm = document.getElementById('subtaskCommandForm');
     const subtaskUniqueCodeInput = document.getElementById('subtask_unique_code');
     const subtaskTaskIdInput = document.getElementById('subtask_task_id');
+    const subtaskParentIdInput = document.getElementById('subtask_parent_id');
     const subtaskError = document.getElementById('subtaskCommandError');
     const editSubtaskModal = document.getElementById('editSubtaskCommandModal');
     const editSubtaskForm = document.getElementById('editSubtaskCommandForm');
@@ -1233,6 +1339,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const editSubtaskError = document.getElementById('editSubtaskCommandError');
     const editSubtaskDeleteButton = document.getElementById('deleteSubtaskCommandBtn');
     let activeSubtaskTaskId = null;
+    let activeSubtaskThreadParentId = null;
     let activeEditTaskId = null;
 
     const generateSubtaskPreviewCode = (taskId) => `ST-${taskId}-${Math.random().toString(16).slice(2, 8).toUpperCase()}`;
@@ -1245,6 +1352,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (subtaskError) subtaskError.textContent = '';
         subtaskForm?.reset();
         activeSubtaskTaskId = null;
+        activeSubtaskThreadParentId = null;
+        if (subtaskParentIdInput) subtaskParentIdInput.value = '';
     };
 
     const getSubTaskEntriesForTask = (taskId) => {
@@ -1317,10 +1426,14 @@ document.addEventListener('DOMContentLoaded', function () {
         editSubtaskForm.querySelector('input[name="title"]')?.focus();
     };
 
-    const openSubtaskModal = (taskId) => {
+    const openSubtaskModal = (taskId, threadParentId = null) => {
         if (!subtaskModal || !subtaskForm) return;
         activeSubtaskTaskId = Number(taskId);
+        activeSubtaskThreadParentId = threadParentId ? Number(threadParentId) : null;
         subtaskTaskIdInput.value = String(taskId);
+        if (subtaskParentIdInput) {
+            subtaskParentIdInput.value = activeSubtaskThreadParentId ? String(activeSubtaskThreadParentId) : '';
+        }
         subtaskUniqueCodeInput.value = generateSubtaskPreviewCode(taskId);
         subtaskError?.classList.add('hidden');
         if (subtaskError) subtaskError.textContent = '';
@@ -1361,10 +1474,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (socketId) headers['X-Socket-ID'] = socketId;
 
         try {
+            const subtaskPayload = new FormData(subtaskForm);
+            if (activeSubtaskThreadParentId) {
+                subtaskPayload.set('parent_id', String(activeSubtaskThreadParentId));
+            }
+
             const response = await fetch(`/tasks/${activeSubtaskTaskId}/subtasks`, {
                 method: 'POST',
                 headers,
-                body: new FormData(subtaskForm),
+                body: subtaskPayload,
             });
             const data = await response.json();
 
@@ -1573,12 +1691,27 @@ document.addEventListener('DOMContentLoaded', function () {
         return match ? Number(match[1]) : null;
     };
 
+    const resolveThreadParentIdFromForm = (form) => {
+        const value = form?.querySelector('input[name="parent_id"]')?.value;
+        const parsed = Number(value || 0);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    };
+
     // ── Comment form AJAX submit (delegated — works for dynamically added forms too) ──
     const commentSubmitHandler = function(e) {
         e.preventDefault();
         const form = e.target;
         const messageInput = form.querySelector('input[name="message"]');
         const slashCommand = (messageInput?.value || '').trim();
+        const taskId = resolveTaskIdFromForm(form);
+
+        if (taskId && isTaskCommentsLocked(taskId)) {
+            const err = document.createElement('p');
+            err.className = 'comment-ajax-error mt-1 text-xs text-rose-600';
+            err.textContent = 'Task is completed. Comment and link posting is disabled.';
+            messageInput?.after(err);
+            return;
+        }
 
         form.querySelector('.comment-ajax-error')?.remove();
 
@@ -1591,9 +1724,67 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            const taskId = resolveTaskIdFromForm(form);
             if (!taskId) return;
-            openSubtaskModal(taskId);
+            const threadParentId = resolveThreadParentIdFromForm(form);
+            openSubtaskModal(taskId, threadParentId);
+            return;
+        }
+
+        if (/^\/resend\b/i.test(slashCommand)) {
+            if (!canManageSubtaskFromComment) {
+                const err = document.createElement('p');
+                err.className = 'comment-ajax-error mt-1 text-xs text-rose-600';
+                err.textContent = 'Only Admin, PM, and DM can use /resend.';
+                messageInput?.after(err);
+                return;
+            }
+
+            if (!taskId) return;
+            const threadParentId = resolveThreadParentIdFromForm(form);
+            const headers = {
+                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            };
+            const socketId = window.Echo?.socketId?.();
+            if (socketId) headers['X-Socket-ID'] = socketId;
+
+            const btn = form.querySelector('button[type="submit"]');
+            if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+
+            fetch(`/tasks/${taskId}/subtasks/resend`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ parent_id: threadParentId }),
+            })
+            .then(r => r.json().then(data => ({ ok: r.ok, data })))
+            .then(({ ok, data }) => {
+                if (!ok) {
+                    const msg = data?.errors?.message?.[0] || data?.message || 'Could not resend subtask approval.';
+                    const err = document.createElement('p');
+                    err.className = 'comment-ajax-error mt-1 text-xs text-rose-600';
+                    err.textContent = msg;
+                    messageInput?.after(err);
+                    return;
+                }
+
+                const c = data?.approval_comment;
+                if (!c?.id) return;
+                appendComment(c);
+                knownCommentIds[c.task_id] = knownCommentIds[c.task_id] ?? [];
+                if (!knownCommentIds[c.task_id].includes(c.id)) knownCommentIds[c.task_id].push(c.id);
+                lastCommentTimestamp = c.created_at;
+                form.reset();
+            })
+            .catch(() => {
+                const err = document.createElement('p');
+                err.className = 'comment-ajax-error mt-1 text-xs text-rose-600';
+                err.textContent = 'Network error. Please try again.';
+                messageInput?.after(err);
+            })
+            .finally(() => { if (btn) { btn.disabled = false; btn.style.opacity = ''; } });
+
             return;
         }
 
@@ -1606,7 +1797,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            const taskId = resolveTaskIdFromForm(form);
             if (!taskId) return;
             openEditSubtaskModal(taskId);
             return;
@@ -1828,11 +2018,14 @@ function toggleTask(id) {
 
         // Status badge
         const badge = document.getElementById(`status-badge-${id}`);
+        const wrapperForBadge = document.getElementById(`task-wrapper-${id}`);
+        const endDateForBadge = wrapperForBadge?.dataset?.endDate;
+        const isBadgeOverdue = !completed && endDateForBadge && new Date(endDateForBadge) < new Date(new Date().toDateString());
         if (badge) {
             badge.className = `inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                completed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
+                completed ? 'bg-emerald-100 text-emerald-700' : (isBadgeOverdue ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600')
             }`;
-            badge.textContent = completed ? 'Completed' : 'Pending';
+            badge.textContent = completed ? 'Completed' : (isBadgeOverdue ? 'Overdue' : 'Pending');
         }
 
         // Title strikethrough
@@ -1845,19 +2038,46 @@ function toggleTask(id) {
 
         // Header background
         const header = document.getElementById(`task-header-${id}`);
+        const wrapper = document.getElementById(`task-wrapper-${id}`);
+        const endDateStr = wrapper?.dataset?.endDate;
+        const isOverdue = !completed && endDateStr && new Date(endDateStr) < new Date(new Date().toDateString());
         if (header) {
-            header.className = `p-5 ${completed ? 'bg-emerald-50 border-emerald-200' : 'bg-white border-slate-200'}`;
+            header.className = `p-5 ${completed ? 'bg-emerald-50 border-emerald-200' : (isOverdue ? 'bg-rose-50 border-rose-200' : 'bg-white border-slate-200')}`;
         }
 
         // Wrapper border
-        const wrapper = document.getElementById(`task-wrapper-${id}`);
         if (wrapper) {
             wrapper.className = `mb-5 overflow-hidden rounded-2xl shadow-sm border ${
-                completed ? 'border-emerald-200' : 'border-slate-200'
+                completed ? 'border-emerald-200' : (isOverdue ? 'border-rose-200' : 'border-slate-200')
             }`;
+            wrapper.dataset.commentsLocked = completed ? '1' : '0';
+            wrapper.querySelectorAll('.comment-form-ajax').forEach((form) => {
+                form.style.display = completed ? 'none' : '';
+            });
+            wrapper.querySelectorAll('.reply-toggle-btn').forEach((btn) => {
+                btn.style.display = completed ? 'none' : '';
+            });
         }
     });
 }
+
+window.toggleCommentEmail = function(id) {
+    fetch(`/tasks/${id}/comment-email-toggle`, {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': '{{ csrf_token() }}', 'Content-Type': 'application/json' }
+    })
+    .then(r => r.json())
+    .then(data => {
+        const btn = document.getElementById(`email-toggle-btn-${id}`);
+        if (!btn || !data || data.status !== 'ok') return;
+        const enabled = !!data.comment_email_enabled;
+        btn.className = `inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold shadow-sm transition ${
+            enabled ? 'bg-sky-100 text-sky-700 hover:bg-sky-200' : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+        }`;
+        btn.innerHTML = `<span class="inline-flex h-1.5 w-1.5 rounded-full ${enabled ? 'bg-sky-500' : 'bg-slate-500'}"></span>${enabled ? 'Email ON' : 'Email OFF'}`;
+    })
+    .catch(() => {});
+};
 
 // ── Comment reactions ──────────────────────────────────────────────────────
 window.reactComment = function(commentId, type) {
@@ -1917,6 +2137,7 @@ window.reactComment = function(commentId, type) {
         <form id="subtaskCommandForm" class="mt-5 grid gap-4 sm:grid-cols-2">
             @csrf
             <input type="hidden" id="subtask_task_id" name="task_id" value="">
+            <input type="hidden" id="subtask_parent_id" name="parent_id" value="">
 
             <div class="sm:col-span-2">
                 <label class="mb-2 block text-sm font-semibold text-slate-700">Unique ID</label>
@@ -2025,6 +2246,12 @@ window.reactComment = function(commentId, type) {
             @method('PUT')
 
             <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Task Unique ID</label>
+                <input type="text" id="etask_unique_id" readonly
+                    class="w-full rounded-3xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm">
+            </div>
+
+            <div class="sm:col-span-2">
                 <label class="mb-2 block text-sm font-semibold text-slate-700">Title <span class="text-rose-500">*</span></label>
                 <input type="text" id="etask_title" name="title"
                     class="w-full rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100" required>
@@ -2072,6 +2299,13 @@ window.reactComment = function(commentId, type) {
             <input type="hidden" id="etask_progress" name="progress" value="0">
 
             <div class="sm:col-span-2">
+                <label class="mb-2 block text-sm font-semibold text-slate-700">Reason for Edit <span class="text-rose-500">*</span></label>
+                <textarea id="etask_edit_reason" name="edit_reason" rows="2" required
+                    placeholder="State why this task was edited"
+                    class="w-full resize-none rounded-3xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-100"></textarea>
+            </div>
+
+            <div class="sm:col-span-2">
                 <button type="submit"
                     class="w-full rounded-3xl bg-amber-400 px-6 py-3 text-sm font-semibold text-white transition hover:bg-amber-500">Save Changes</button>
             </div>
@@ -2111,14 +2345,16 @@ window.reactComment = function(commentId, type) {
 
     let editingTaskId = null;
 
-    function openEditTask(id, title, description, assignedTo, startDate, endDate, progress, status) {
+    function openEditTask(id, title, description, assignedTo, startDate, endDate, progress, status, uniqueId) {
         editingTaskId = id;
         document.getElementById('editTaskForm').action = `/tasks/${id}`;
+        document.getElementById('etask_unique_id').value   = uniqueId || '';
         document.getElementById('etask_title').value       = title;
         document.getElementById('etask_description').value = description;
         document.getElementById('etask_assigned_to').value = assignedTo;
         document.getElementById('etask_start_date').value  = startDate;
         document.getElementById('etask_end_date').value    = endDate;
+        document.getElementById('etask_edit_reason').value = '';
         editTaskStatus.value = status || 'pending';
         editTaskProgress.value = deriveProgressFromStatus(editTaskStatus.value, progress);
         editTaskModal.classList.remove('hidden');

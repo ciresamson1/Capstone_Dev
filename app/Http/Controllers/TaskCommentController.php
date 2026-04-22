@@ -21,6 +21,12 @@ class TaskCommentController extends Controller
 {
     public function store(Request $request, Task $task)
     {
+        if ((int) $task->progress >= 100 || ($task->status ?? null) === 'completed') {
+            throw ValidationException::withMessages([
+                'message' => 'Task is completed. Comment and link posting is disabled.',
+            ]);
+        }
+
         $validated = $request->validate([
             'message'   => 'nullable|string',
             'link_url'  => 'nullable|string|max:2048',
@@ -91,7 +97,7 @@ class TaskCommentController extends Controller
         // Send email notification to project team (exclude the commenter)
         try {
             $project = $task->project;
-            if ($project) {
+            if ($project && (bool) $task->comment_email_enabled) {
                 // Collect all user IDs who have previously commented on this task (thread participants)
                 $threadParticipantIds = TaskComment::where('task_id', $task->id)
                     ->whereNotNull('user_id')

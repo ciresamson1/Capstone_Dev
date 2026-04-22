@@ -44,6 +44,10 @@
                         <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-100">📁</span>
                         Projects
                     </a>
+                    <a href="{{ route('gantt.index') }}" class="flex items-center gap-3 rounded-3xl px-4 py-3 text-sm font-medium transition hover:bg-slate-800 {{ request()->routeIs('gantt.index') ? 'bg-slate-800 text-white shadow-lg' : 'text-slate-300' }}">
+                        <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-100">📅</span>
+                        Gantt Chart
+                    </a>
                     <a href="{{ route('admin.tasks.index') }}" class="flex items-center gap-3 rounded-3xl px-4 py-3 text-sm font-medium transition hover:bg-slate-800 text-slate-300">
                         <span class="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-slate-100">✅</span>
                         Tasks
@@ -404,7 +408,6 @@
     function createGanttChart(data, zoomDays) {
         const filtered = data;
         const maxSpan = Math.max(...filtered.map(item => item.startOffset + item.duration), 7);
-        const stepSize = zoomDays;
 
         const offsetDataset = {
             label: 'Start offset',
@@ -447,8 +450,8 @@
                         min: 0,
                         max: Math.max(maxSpan, 7),
                         ticks: {
-                            stepSize: stepSize,
-                            callback: function(value) {
+                            stepSize: zoomDays,
+                            callback: function (value) {
                                 return formatDateOffset(value);
                             },
                             color: '#475569',
@@ -470,34 +473,34 @@
                 plugins: {
                     tooltip: {
                         callbacks: {
-                            title: function(contexts) {
-                                const item = data[contexts[0].dataIndex];
+                            title: function (contexts) {
+                                const item = filtered[contexts[0].dataIndex];
                                 return item ? item.project : '';
                             },
-                            label: function(context) {
-                                const item = data[context.dataIndex];
+                            label: function (context) {
+                                const item = filtered[context.dataIndex];
                                 if (context.dataset.label === 'Start offset') return null;
                                 return [
-                                    item ? '📌 ' + item.title : '',
+                                    item ? 'Task: ' + item.title : '',
                                     'Duration: ' + context.formattedValue + ' days',
-                                    '👆 Click to view task',
+                                    'Click to view task',
                                 ];
-                            }
-                        }
+                            },
+                        },
                     },
                     legend: { display: false },
                 },
-                onClick: function(e, elements) {
+                onClick: function (e, elements) {
                     if (!elements.length) return;
-                    const item = data[elements[0].index];
+                    const item = filtered[elements[0].index];
                     if (item && item.project_id && item.id) {
                         window.location.href = '/projects/' + item.project_id + '#task-wrapper-' + item.id;
                     }
                 },
-                onHover: function(e, elements) {
+                onHover: function (e, elements) {
                     e.native.target.style.cursor = elements.length ? 'pointer' : 'default';
                 },
-            }
+            },
         });
     }
 

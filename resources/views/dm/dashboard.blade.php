@@ -109,9 +109,20 @@
                                 <div class="mt-4 min-h-0 flex-1 overflow-y-auto space-y-2 pr-1">
                                     @if($alertItems->isNotEmpty())
                                         @foreach($alertItems as $item)
+                                            @php
+                                                $projectName = $item['project'] ?? 'Unassigned';
+                                                $countValue = isset($item['count']) ? (int) $item['count'] : null;
+                                                $taskTitle = $item['title'] ?? null;
+                                            @endphp
                                             <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
-                                                <p class="font-semibold text-slate-900">{{ $item['project'] }}</p>
-                                                <p>{{ $item['count'] }} overdue task{{ $item['count'] === 1 ? '' : 's' }}</p>
+                                                <p class="font-semibold text-slate-900">{{ $projectName }}</p>
+                                                @if(!is_null($countValue))
+                                                    <p>{{ $countValue }} overdue task{{ $countValue === 1 ? '' : 's' }}</p>
+                                                @elseif($taskTitle)
+                                                    <p>{{ $taskTitle }}</p>
+                                                @else
+                                                    <p>Task update available.</p>
+                                                @endif
                                             </div>
                                         @endforeach
                                     @else
@@ -421,9 +432,19 @@
                 plugins: {
                     tooltip: {
                         callbacks: {
-                            label: ctx => ctx.dataset.label === 'Start offset'
-                                ? 'Starts in ' + ctx.formattedValue + ' days'
-                                : 'Duration: ' + ctx.formattedValue + ' days',
+                            title: ctx => {
+                                const item = ctx[0] ? data[ctx[0].dataIndex] : null;
+                                return item ? item.project : '';
+                            },
+                            label: ctx => {
+                                const item = data[ctx.dataIndex];
+                                if (ctx.dataset.label === 'Start offset') return null;
+                                return [
+                                    item ? 'Task: ' + item.title : '',
+                                    'Duration: ' + ctx.formattedValue + ' days',
+                                    'Click to view task',
+                                ];
+                            },
                         },
                     },
                     legend: { display: false },
