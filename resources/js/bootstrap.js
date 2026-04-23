@@ -8,12 +8,17 @@ import Pusher from 'pusher-js';
 
 window.Pusher = Pusher;
 
+const broadcaster = import.meta.env.VITE_BROADCASTER || 'reverb';
+const isTls = (import.meta.env.VITE_REVERB_SCHEME || 'https') === 'https';
+const wsHost = import.meta.env.VITE_REVERB_HOST || window.location.hostname;
+const wsPort = Number(import.meta.env.VITE_REVERB_PORT || (isTls ? 443 : 80));
+
 window.Echo = new Echo({
-    broadcaster: 'reverb',
+    broadcaster,
     key: import.meta.env.VITE_REVERB_APP_KEY,
-    wsHost: import.meta.env.VITE_REVERB_HOST ?? 'localhost',
-    wsPort: import.meta.env.VITE_REVERB_PORT ?? 8080,
-    wssPort: import.meta.env.VITE_REVERB_PORT ?? 8080,
-    forceTLS: false,
+    wsHost,
+    wsPort,
+    wssPort: wsPort,
+    forceTLS: isTls,
     enabledTransports: ['ws', 'wss'],
 });
