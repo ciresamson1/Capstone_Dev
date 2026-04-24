@@ -16,7 +16,10 @@ class RegisteredUserController extends Controller
 {
     public function create()
     {
-        return view('auth.register');
+        $email = request('email');
+        $alreadyRegistered = $email && User::where('email', $email)->exists();
+
+        return view('auth.register', compact('alreadyRegistered'));
     }
 
     public function store(Request $request)
