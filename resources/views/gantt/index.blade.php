@@ -100,6 +100,7 @@
 <script>
     const rows = @json($ganttRows);
     let ganttInstance = null;
+    let currentViewMode = 'Week';
 
     const parseDate = (value) => {
         if (!value) return null;
@@ -154,6 +155,7 @@
     };
 
     const render = (viewMode = 'Week') => {
+        currentViewMode = viewMode;
         const root = document.getElementById('portfolio-gantt');
         if (!root || rows.length === 0) return;
         root.innerHTML = '';
@@ -172,5 +174,36 @@
 
     window.setView = (mode) => render(mode);
     render('Week');
+
+    let ganttReloadQueued = false;
+
+    function handleGanttRealtimeUpdate() {
+        if (ganttReloadQueued) return;
+        ganttReloadQueued = true;
+        setTimeout(() => {
+            // Full reload guarantees the latest gantt rows for project/task/subtask changes.
+            window.location.reload();
+        }, 300);
+    }
+
+    function registerGanttRealtimeListener() {
+        const attach = () => {
+            if (!window.Echo) return false;
+            window.Echo.channel('dashboard').listen('.dashboard.updated', handleGanttRealtimeUpdate);
+            return true;
+        };
+
+        if (!attach()) {
+            const intervalId = setInterval(() => {
+                if (attach()) {
+                    clearInterval(intervalId);
+                }
+            }, 250);
+
+            setTimeout(() => clearInterval(intervalId), 5000);
+        }
+    }
+
+    registerGanttRealtimeListener();
 </script>
 @endsection

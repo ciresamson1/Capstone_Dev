@@ -143,6 +143,9 @@
                                 <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Status <button onclick="sortTable('projectsTable',4,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',4,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Tasks <button onclick="sortTable('projectsTable',5,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',5,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
                                 <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Ends <button onclick="sortTable('projectsTable',6,'asc')" class="text-[9px] text-slate-300 hover:text-brand-500">▲</button><button onclick="sortTable('projectsTable',6,'desc')" class="text-[9px] text-slate-300 hover:text-brand-500">▼</button></th>
+                                @if(strtolower((string) auth()->user()->role) === 'admin')
+                                    <th class="pb-4 pr-8 font-semibold text-slate-900 whitespace-nowrap">Complete</th>
+                                @endif
                                 <th class="pb-4 font-semibold text-slate-900">Actions</th>
                             </tr>
                         </thead>
@@ -168,6 +171,22 @@
                                     </td>
                                     <td class="py-5 pr-8 text-slate-700">{{ $project->tasks_count }}</td>
                                     <td class="py-5 pr-8 text-slate-700">{{ $project->end_date ? \Illuminate\Support\Carbon::parse($project->end_date)->format('M d, Y') : 'TBD' }}</td>
+                                    @if(strtolower((string) auth()->user()->role) === 'admin')
+                                        <td class="py-5 pr-8 text-slate-700">
+                                            <form method="POST" action="{{ route('projects.mark-completed', $project->id) }}" class="inline-flex items-center">
+                                                @csrf
+                                                @method('PATCH')
+                                                <input type="hidden" name="completed" value="1">
+                                                <input
+                                                    type="checkbox"
+                                                    class="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                                    onchange="this.form.submit()"
+                                                    {{ $project->status === 'completed' ? 'checked disabled' : '' }}
+                                                    title="Mark project as completed"
+                                                >
+                                            </form>
+                                        </td>
+                                    @endif
                                     <td class="py-5 text-slate-700">
                                         <div class="flex items-center gap-1">
                                             <a href="{{ route('projects.show', $project->id) }}" title="View" class="inline-flex h-8 w-8 items-center justify-center rounded-full bg-brand-500 text-white transition hover:bg-brand-600">

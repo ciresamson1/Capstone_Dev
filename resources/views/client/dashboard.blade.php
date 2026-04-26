@@ -107,10 +107,20 @@
                                 <div class="mt-4 min-h-0 flex-1 overflow-y-auto space-y-2 pr-1">
                                     @if($alertItems->isNotEmpty())
                                         @foreach($alertItems as $item)
-                                            <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
-                                                <p class="font-semibold text-slate-900">{{ $item['project'] }}</p>
-                                                <p>{{ $item['summary'] }}</p>
-                                            </div>
+                                            @if(isset($item['title']) || isset($item['details']))
+                                                <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
+                                                    <p class="font-semibold text-slate-900">{{ $item['title'] ?? 'Update' }}</p>
+                                                    <p class="mt-1">{{ $item['details'] ?? 'No additional details.' }}</p>
+                                                    @if(!empty($item['time']))
+                                                        <p class="mt-1 text-xs text-slate-400">{{ $item['time'] }}</p>
+                                                    @endif
+                                                </div>
+                                            @else
+                                                <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
+                                                    <p class="font-semibold text-slate-900">{{ $item['project'] }}</p>
+                                                    <p>{{ $item['summary'] }}</p>
+                                                </div>
+                                            @endif
                                         @endforeach
                                     @else
                                         <div class="rounded-2xl bg-white p-3 text-sm text-slate-500 shadow-sm">No detailed items right now.</div>
@@ -419,12 +429,18 @@
         }
     }
 
+    let dashboardReloadQueued = false;
+
+    function handleDashboardUpdate() {
+        if (dashboardReloadQueued) return;
+        dashboardReloadQueued = true;
+        setTimeout(() => window.location.reload(), 300);
+    }
+
     function registerDashboardReloadListener() {
         const attach = () => {
             if (!window.Echo) return false;
-            window.Echo.channel('dashboard').listen('.dashboard.updated', () => {
-                // Keep the current page stable; project/task cards update via role pages.
-            });
+            window.Echo.channel('dashboard').listen('.dashboard.updated', handleDashboardUpdate);
             return true;
         };
 

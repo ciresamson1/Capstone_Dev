@@ -89,6 +89,9 @@ Route::middleware(['auth'])->group(function () {
     */
 
     Route::get('/projects/clients/search', [ProjectController::class, 'searchClients'])->name('projects.clients.search');
+    Route::patch('/projects/{project}/mark-completed', [ProjectController::class, 'markCompleted'])
+        ->middleware('role:admin')
+        ->name('projects.mark-completed');
     Route::resource('projects', ProjectController::class);
 
     /*
@@ -124,6 +127,10 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/projects/{project}/tasks/snapshot',
         [TaskController::class, 'snapshot']
     )->name('tasks.snapshot');
+
+    Route::get('/projects/{project}/subtasks/snapshot',
+        [SubTaskController::class, 'snapshot']
+    )->name('subtasks.snapshot');
 
     /*
     |--------------------------------------------------------------------------

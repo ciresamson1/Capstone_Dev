@@ -15,6 +15,7 @@ class GanttController extends Controller
         $projectQuery = Project::with([
             'creator:id,name,email',
             'tasks.assignedTo:id,name,email',
+            'tasks.subtasks',
         ]);
 
         if ($role === 'pm') {
@@ -98,6 +99,40 @@ class GanttController extends Controller
                     'project_id' => $project->id,
                     'task_id' => $task->id,
                 ];
+
+                // Add subtasks for this task
+                $subtasks = $task->subtasks->sortBy('start_date')->values();
+                foreach ($subtasks as $subtask) {
+                    // Use subtask's own dates if available, otherwise fallback to task dates
+                    $subtaskStart = $subtask->start_date ? Carbon::parse($subtask->start_date) : $taskStart;
+                    $subtaskEnd = $subtask->end_date ? Carbon::parse($subtask->end_date) : $taskEnd;
+                    
+                    if ($subtaskEnd->lt($subtaskStart)) {
+                        $subtaskEnd = (clone $subtaskStart);
+                    }
+
+                    $subtaskClass = 'bar-task-pending';
+                    if ($subtask->is_completed) {
+                        $subtaskClass = 'bar-task-completed';
+                    } elseif ($subtaskEnd->lt(Carbon::today())) {
+                        $subtaskClass = 'bar-task-overdue';
+                    }
+
+                    $rows[] = [
+                        'id' => 'subtask-' . $subtask->id,
+                        'name' => '      ○ [' . ($subtask->unique_code ?? 'ST-' . $subtask->id) . '] ' . $subtask->title . ($subtask->is_completed ? ' Completed' : ''),
+                        'start' => $subtaskStart->toDateString(),
+                        'end' => $subtaskEnd->toDateString(),
+                        'progress' => $subtask->is_completed ? 100 : 0,
+                        'custom_class' => $subtaskClass,
+                        'description' => $subtask->description ?? 'No description provided.',
+                        'owner' => 'Unassigned',
+                        'due' => $subtaskEnd->format('M d, Y'),
+                        'type' => 'subtask',
+                        'project_id' => $project->id,
+                        'task_id' => $task->id,
+                    ];
+                }
             }
         }
 

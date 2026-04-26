@@ -134,6 +134,14 @@
                                                         View Task
                                                     </a>
                                                 </div>
+                                            @elseif(isset($item['title']) || isset($item['details']))
+                                                <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
+                                                    <p class="font-semibold text-slate-900">{{ $item['title'] ?? 'Update' }}</p>
+                                                    <p class="mt-1">{{ $item['details'] ?? 'No additional details.' }}</p>
+                                                    @if(!empty($item['time']))
+                                                        <p class="mt-1 text-xs text-slate-400">{{ $item['time'] }}</p>
+                                                    @endif
+                                                </div>
                                             @else
                                                 <div class="rounded-2xl bg-white p-3 text-sm text-slate-600 shadow-sm">
                                                     <p class="font-semibold text-slate-900">{{ $item['project'] }}</p>
@@ -384,8 +392,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    const ganttData = @json($ganttData);
-    const teamPerformance = @json($teamPerformance);
+    let ganttData = @json($ganttData);
+    let teamPerformance = @json($teamPerformance);
 
     const ganttCtx = document.getElementById('ganttChart').getContext('2d');
     const teamCtx = document.getElementById('teamPerformanceChart').getContext('2d');
@@ -596,6 +604,45 @@
             });
     }
 
+    function syncUserFilterOptions() {
+        const userFilter = document.getElementById('userFilter');
+        if (!userFilter) return;
+
+        const selected = userFilter.value || 'all';
+        const uniqueUsers = Array.from(new Set(ganttData.map(item => item.assigned_to).filter(Boolean))).sort();
+
+        userFilter.innerHTML = '<option value="all">All Users</option>';
+        uniqueUsers.forEach((name) => {
+            const option = document.createElement('option');
+            option.value = name;
+            option.textContent = name;
+            userFilter.appendChild(option);
+        });
+
+        userFilter.value = uniqueUsers.includes(selected) || selected === 'all' ? selected : 'all';
+    }
+
+    function refreshChartData() {
+        const url = '{{ route('admin.dashboard.chart-data') }}' + '?_=' + Date.now();
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                if (Array.isArray(data.ganttData)) {
+                    ganttData = data.ganttData;
+                    syncUserFilterOptions();
+                    filterGantt();
+                }
+
+                if (data.teamPerformance && Array.isArray(data.teamPerformance.labels)) {
+                    teamPerformance = data.teamPerformance;
+                    createTeamChart();
+                }
+            })
+            .catch(() => {
+                // Non-fatal: fallback interval and next websocket event will retry.
+            });
+    }
+
     // Project suggestive search
     const projectSearchInput = document.getElementById('projectSearchInput');
     const projectFilterHidden = document.getElementById('projectFilter');
@@ -653,8 +700,16 @@
 
     createTeamChart();
 
+    let dashboardReloadQueued = false;
+
     function handleDashboardUpdate() {
-        refreshKpiCards();
+        if (dashboardReloadQueued) return;
+        dashboardReloadQueued = true;
+        setTimeout(() => {
+            refreshKpiCards();
+            refreshChartData();
+            dashboardReloadQueued = false;
+        }, 250);
     }
 
     function registerDashboardUpdateListener() {
@@ -678,6 +733,8 @@
 
     // Refresh KPI cards every 45 seconds
     setInterval(refreshKpiCards, 45000);
+    // Refresh charts every 15 seconds as websocket fallback
+    setInterval(refreshChartData, 15000);
 </script>
 
 <script>

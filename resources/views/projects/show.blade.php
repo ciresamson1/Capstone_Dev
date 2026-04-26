@@ -307,12 +307,16 @@
     .bar-wrapper.bar-grey   .bar, .bar-wrapper.bar-grey   .bar-progress { fill: #94a3b8 !important; }
     .bar-wrapper.bar-orange .bar, .bar-wrapper.bar-orange .bar-progress { fill: #f97316 !important; }
     .bar-wrapper.bar-blue   .bar, .bar-wrapper.bar-blue   .bar-progress { fill: #93c5fd !important; }
+    .bar-wrapper.bar-subtask-completed .bar, .bar-wrapper.bar-subtask-completed .bar-progress { fill: #fdba74 !important; }
+    .bar-wrapper.bar-subtask-pending .bar, .bar-wrapper.bar-subtask-pending .bar-progress { fill: #86efac !important; }
     svg .bar-green  .bar, svg .bar-green  .bar-progress { fill: #10b981 !important; }
     svg .bar-yellow .bar, svg .bar-yellow .bar-progress { fill: #f59e0b !important; }
     svg .bar-red    .bar, svg .bar-red    .bar-progress { fill: #ef4444 !important; }
     svg .bar-grey   .bar, svg .bar-grey   .bar-progress { fill: #94a3b8 !important; }
     svg .bar-orange .bar, svg .bar-orange .bar-progress { fill: #f97316 !important; }
     svg .bar-blue   .bar, svg .bar-blue   .bar-progress { fill: #93c5fd !important; }
+    svg .bar-subtask-completed .bar, svg .bar-subtask-completed .bar-progress { fill: #fdba74 !important; }
+    svg .bar-subtask-pending .bar, svg .bar-subtask-pending .bar-progress { fill: #86efac !important; }
     .bar-wrapper.bar-blue:hover .bar,
     .bar-wrapper.bar-blue.active .bar,
     svg .bar-blue:hover .bar,
@@ -486,10 +490,37 @@ document.addEventListener('DOMContentLoaded', function () {
             elseif ($endDate < $today)                                        $barClass = 'bar-red';
             elseif ($task->progress < 100 && $daysUntilDeadline <= 3 && $daysUntilDeadline >= 0) $barClass = 'bar-yellow';
             else                                                              $barClass = 'bar-grey';
+
+            $approvalStatusBySubTask = [];
+            $approvalComments = $task->comments->flatMap(function ($taskComment) {
+                return collect([$taskComment])->merge($taskComment->replies);
+            });
+
+            foreach ($approvalComments as $taskComment) {
+                if (!preg_match('/^subtask_approval:(\d+):(pending|completed)$/i', (string) $taskComment->type, $matches)) {
+                    continue;
+                }
+
+                $subTaskId = (int) $matches[1];
+                $status = strtolower($matches[2]);
+                $current = $approvalStatusBySubTask[$subTaskId] ?? null;
+
+                if (!$current || $taskComment->updated_at->gt($current['updated_at'])) {
+                    $approvalStatusBySubTask[$subTaskId] = [
+                        'status' => $status,
+                        'updated_at' => $taskComment->updated_at,
+                    ];
+                }
+            }
         @endphp
         { id: 'task-{{ $task->id }}', name: '{{ addslashes($task->title) }}', start: '{{ $task->start_date }}', end: '{{ $task->end_date }}', progress: {{ $task->progress }}, custom_class: '{{ $barClass }}', task_id: {{ $task->id }}, is_subtask: false, description: '{{ addslashes($task->description ?? '') }}', is_completed: {{ $task->progress >= 100 ? 'true' : 'false' }}, status_label: '{{ $task->progress >= 100 ? 'COMPLETED' : 'IN PROGRESS' }}' },
         @foreach($task->subTasks as $subTask)
-        { id: 'subtask-{{ $subTask->id }}', name: '[{{ $subTask->unique_code ?? ('ST-LEGACY-' . str_pad((string) $subTask->id, 6, '0', STR_PAD_LEFT)) }}] {{ addslashes($subTask->title) }}', start: '{{ $subTask->start_date ? \Illuminate\Support\Carbon::parse($subTask->start_date)->toDateString() : $task->start_date }}', end: '{{ $subTask->end_date ? \Illuminate\Support\Carbon::parse($subTask->end_date)->toDateString() : $task->end_date }}', progress: {{ $subTask->is_completed ? 100 : 0 }}, custom_class: 'bar-orange', task_id: {{ $task->id }}, is_subtask: true, subtask_id: {{ $subTask->id }}, unique_code: '{{ $subTask->unique_code ?? ('ST-LEGACY-' . str_pad((string) $subTask->id, 6, '0', STR_PAD_LEFT)) }}', description: '{{ addslashes($subTask->description ?? '') }}', is_completed: {{ $subTask->is_completed ? 'true' : 'false' }}, status_label: '{{ $subTask->is_completed ? 'COMPLETED' : 'PENDING APPROVAL' }}' },
+        @php
+            $approvalState = $approvalStatusBySubTask[$subTask->id]['status'] ?? 'pending';
+            $isSubTaskComplete = (bool) $subTask->is_completed || $approvalState === 'completed';
+            $subTaskBarClass = $isSubTaskComplete ? 'bar-subtask-completed' : 'bar-subtask-pending';
+        @endphp
+        { id: 'subtask-{{ $subTask->id }}', name: '[{{ $subTask->unique_code ?? ('ST-LEGACY-' . str_pad((string) $subTask->id, 6, '0', STR_PAD_LEFT)) }}] {{ addslashes($subTask->title) }}{{ $isSubTaskComplete ? ' Completed' : '' }}', start: '{{ $subTask->start_date ? \Illuminate\Support\Carbon::parse($subTask->start_date)->toDateString() : $task->start_date }}', end: '{{ $subTask->end_date ? \Illuminate\Support\Carbon::parse($subTask->end_date)->toDateString() : $task->end_date }}', progress: {{ $isSubTaskComplete ? 100 : 0 }}, custom_class: '{{ $subTaskBarClass }}', task_id: {{ $task->id }}, is_subtask: true, subtask_id: {{ $subTask->id }}, unique_code: '{{ $subTask->unique_code ?? ('ST-LEGACY-' . str_pad((string) $subTask->id, 6, '0', STR_PAD_LEFT)) }}', description: '{{ addslashes($subTask->description ?? '') }}', is_completed: {{ $isSubTaskComplete ? 'true' : 'false' }}, status_label: '{{ $isSubTaskComplete ? 'COMPLETED' : 'PENDING APPROVAL' }}' },
         @endforeach
         @endforeach
     ];
@@ -543,10 +574,12 @@ document.addEventListener('DOMContentLoaded', function () {
         'bar-grey': '#94a3b8',
         'bar-orange': '#f97316',
         'bar-blue': '#93c5fd',
+        'bar-subtask-completed': '#fdba74',
+        'bar-subtask-pending': '#86efac',
     };
 
     const applyGanttColors = () => {
-        document.querySelectorAll('[class*="bar-green"],[class*="bar-yellow"],[class*="bar-red"],[class*="bar-grey"],[class*="bar-orange"],[class*="bar-blue"]').forEach((wrapper) => {
+        document.querySelectorAll('[class*="bar-green"],[class*="bar-yellow"],[class*="bar-red"],[class*="bar-grey"],[class*="bar-orange"],[class*="bar-blue"],[class*="bar-subtask-completed"],[class*="bar-subtask-pending"]').forEach((wrapper) => {
             const cls = wrapper.className.baseVal || wrapper.className;
             const color = Object.entries(ganttColorMap).find(([key]) => cls.includes(key))?.[1];
             if (!color) return;
@@ -635,6 +668,11 @@ document.addEventListener('DOMContentLoaded', function () {
         ganttTasks.splice(insertAt, 0, entry);
     };
 
+    const withCompletedLabel = (name = '', isCompleted = false) => {
+        const base = String(name || '').replace(/\s+Completed$/, '').trim();
+        return isCompleted ? `${base} Completed` : base;
+    };
+
     const markSubTaskCompletedInGantt = (subTaskId) => {
         const key = `subtask-${subTaskId}`;
         const idx = ganttTasks.findIndex((item) => item.id === key);
@@ -642,10 +680,33 @@ document.addEventListener('DOMContentLoaded', function () {
 
         ganttTasks[idx] = {
             ...ganttTasks[idx],
+            name: withCompletedLabel(ganttTasks[idx].name, true),
             progress: 100,
+            custom_class: 'bar-subtask-completed',
             is_completed: true,
             status_label: 'COMPLETED',
         };
+    };
+
+    const syncSubTaskApprovalStateFromComment = (comment) => {
+        const parsed = parseSubTaskApprovalType(comment?.type || '');
+        if (!parsed) return false;
+
+        const key = `subtask-${parsed.subTaskId}`;
+        const idx = ganttTasks.findIndex((item) => item.id === key);
+        if (idx === -1) return false;
+
+        const isCompleted = parsed.status === 'completed';
+        ganttTasks[idx] = {
+            ...ganttTasks[idx],
+            name: withCompletedLabel(ganttTasks[idx].name, isCompleted),
+            progress: isCompleted ? 100 : 0,
+            custom_class: isCompleted ? 'bar-subtask-completed' : 'bar-subtask-pending',
+            is_completed: isCompleted,
+            status_label: isCompleted ? 'COMPLETED' : 'PENDING APPROVAL',
+        };
+
+        return true;
     };
 
     const deriveTaskBarClass = (task) => {
@@ -888,7 +949,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ── Comment append helper ─────────────────────────────────────────────
     const appendComment = (c) => {
+        let ganttNeedsRender = false;
         const isMe = c.user_id === {{ auth()->id() }};
+        if (syncSubTaskApprovalStateFromComment(c)) {
+            ganttNeedsRender = true;
+        }
         if (c.parent_id) {
             const repliesContainer = document.getElementById(`replies-${c.parent_id}`);
             if (!repliesContainer || repliesContainer.querySelector(`[data-comment-id="${c.id}"]`)) return;
@@ -909,6 +974,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const commentsWrap = repliesContainer.closest('[id^="task-comments-"]');
             if (commentsWrap) commentsWrap.scrollTop = commentsWrap.scrollHeight;
+            if (ganttNeedsRender) renderGantt();
             return;
         }
 
@@ -938,6 +1004,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // Scroll to latest
         container.scrollTop = container.scrollHeight;
+        if (ganttNeedsRender) renderGantt();
     };
 
     // ── Polling ───────────────────────────────────────────────────────────
@@ -964,7 +1031,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // ── WebSocket ─────────────────────────────────────────────────────────
     const taskCardUrl = (taskId) => `/projects/{{ $project->id }}/tasks/${taskId}/card`;
     const taskSnapshotUrl = "{{ route('tasks.snapshot', $project->id) }}";
+    const subTaskSnapshotUrl = "{{ route('subtasks.snapshot', $project->id) }}";
     let lastTaskSnapshotAt = null;
+    let lastSubTaskSnapshotAt = null;
 
     const refreshProjectSummaryCards = () => {
         const wrappers = Array.from(document.querySelectorAll('[id^="task-wrapper-"]'));
@@ -1154,11 +1223,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
         insertSubTaskInGantt({
             id: `subtask-${s.id}`,
-            name: `[${s.unique_code}] ${s.title}`,
+            name: withCompletedLabel(`[${s.unique_code}] ${s.title}`, !!s.is_completed),
             start: s.start_date,
             end: s.end_date,
             progress: s.is_completed ? 100 : 0,
-            custom_class: 'bar-orange',
+            custom_class: s.is_completed ? 'bar-subtask-completed' : 'bar-subtask-pending',
             task_id: s.task_id,
             is_subtask: true,
             subtask_id: s.id,
@@ -1243,6 +1312,63 @@ document.addEventListener('DOMContentLoaded', function () {
             .catch(() => {});
     };
 
+    const pollSubTaskStates = () => {
+        fetch(subTaskSnapshotUrl, { headers: { 'Accept': 'application/json' } })
+            .then(r => r.json())
+            .then(items => {
+                if (!Array.isArray(items)) return;
+
+                let ganttNeedsRender = false;
+                const activeSubTaskIds = new Set();
+
+                items.forEach((s) => {
+                    if (!s || !s.id) return;
+
+                    activeSubTaskIds.add(`subtask-${s.id}`);
+
+                    if (!s.updated_at || !lastSubTaskSnapshotAt || s.updated_at > lastSubTaskSnapshotAt) {
+                        insertSubTaskInGantt({
+                            id: `subtask-${s.id}`,
+                            name: withCompletedLabel(`[${s.unique_code}] ${s.title}`, !!s.is_completed),
+                            start: s.start_date,
+                            end: s.end_date,
+                            progress: s.is_completed ? 100 : 0,
+                            custom_class: s.is_completed ? 'bar-subtask-completed' : 'bar-subtask-pending',
+                            task_id: s.task_id,
+                            is_subtask: true,
+                            subtask_id: s.id,
+                            unique_code: s.unique_code,
+                            description: s.description || '',
+                            is_completed: !!s.is_completed,
+                            status_label: s.is_completed ? 'COMPLETED' : 'PENDING APPROVAL',
+                        });
+                        ganttNeedsRender = true;
+                    }
+                });
+
+                const hasRemovedSubtasks = ganttTasks.some((entry) => entry.is_subtask && !activeSubTaskIds.has(entry.id));
+                if (hasRemovedSubtasks) {
+                    ganttTasks = ganttTasks.filter((entry) => !entry.is_subtask || activeSubTaskIds.has(entry.id));
+                    ganttNeedsRender = true;
+                }
+
+                if (ganttNeedsRender) renderGantt();
+
+                const newest = items
+                    .map(s => s?.updated_at)
+                    .filter(Boolean)
+                    .sort()
+                    .pop();
+
+                if (newest) {
+                    lastSubTaskSnapshotAt = lastSubTaskSnapshotAt && lastSubTaskSnapshotAt > newest
+                        ? lastSubTaskSnapshotAt
+                        : newest;
+                }
+            })
+            .catch(() => {});
+    };
+
     function registerProjectRealtimeListener() {
         const attach = () => {
             if (!window.Echo || window.projectRealtimeAttached) return false;
@@ -1283,7 +1409,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     registerProjectRealtimeListener();
+    pollTaskStates();
+    pollSubTaskStates();
     setInterval(pollTaskStates, 3000);
+    setInterval(pollSubTaskStates, 3000);
     refreshProjectSummaryCards();
 
     // ── Assign Role modal ─────────────────────────────────────────────────
@@ -1494,11 +1623,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (subtask?.id) {
                 insertSubTaskInGantt({
                     id: `subtask-${subtask.id}`,
-                    name: `[${subtask.unique_code}] ${subtask.title}`,
+                    name: withCompletedLabel(`[${subtask.unique_code}] ${subtask.title}`, !!subtask.is_completed),
                     start: subtask.start_date,
                     end: subtask.end_date,
                     progress: subtask.is_completed ? 100 : 0,
-                    custom_class: 'bar-orange',
+                    custom_class: subtask.is_completed ? 'bar-subtask-completed' : 'bar-subtask-pending',
                     task_id: subtask.task_id,
                     is_subtask: true,
                     subtask_id: subtask.id,
@@ -1583,11 +1712,11 @@ document.addEventListener('DOMContentLoaded', function () {
             if (subtask?.id) {
                 insertSubTaskInGantt({
                     id: `subtask-${subtask.id}`,
-                    name: `[${subtask.unique_code}] ${subtask.title}`,
+                    name: withCompletedLabel(`[${subtask.unique_code}] ${subtask.title}`, !!subtask.is_completed),
                     start: subtask.start_date,
                     end: subtask.end_date,
                     progress: subtask.is_completed ? 100 : 0,
-                    custom_class: 'bar-orange',
+                    custom_class: subtask.is_completed ? 'bar-subtask-completed' : 'bar-subtask-pending',
                     task_id: subtask.task_id,
                     is_subtask: true,
                     subtask_id: subtask.id,

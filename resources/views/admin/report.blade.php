@@ -182,11 +182,11 @@
                                     </div>
 
                                     <div class="rounded-2xl bg-slate-50 p-3">
-                                        <p class="text-[11px] text-slate-500">Overdue Tasks</p>
-                                        <p class="mt-1 text-2xl font-bold {{ $row['overdueTasks'] === 0 ? 'text-emerald-700' : 'text-rose-700' }}">
-                                            {{ $row['overdueTasks'] }}
+                                        <p class="text-[11px] text-slate-500">Overdue Projects</p>
+                                        <p class="mt-1 text-2xl font-bold {{ $row['overdueProjects'] === 0 ? 'text-emerald-700' : 'text-rose-700' }}">
+                                            {{ $row['overdueProjects'] }}
                                         </p>
-                                        <p class="text-[11px] text-slate-400 mt-0.5">past due date</p>
+                                        <p class="text-[11px] text-slate-400 mt-0.5">past end date</p>
                                     </div>
                                 </div>
                                 {{-- Download button --}}
@@ -499,6 +499,22 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('openAssignRoleModal').addEventListener('click', () => modal.classList.remove('hidden'));
         document.getElementById('closeAssignRoleModal').addEventListener('click', () => modal.classList.add('hidden'));
         modal.addEventListener('click', e => { if (e.target === modal) modal.classList.add('hidden'); });
+    }
+
+    // Realtime refresh for report metrics when task/project/subtask updates are broadcast.
+    let reportReloadQueued = false;
+    function handleReportUpdate() {
+        if (reportReloadQueued) return;
+        reportReloadQueued = true;
+        setTimeout(() => window.location.reload(), 500);
+    }
+
+    if (window.Echo) {
+        try {
+            window.Echo.channel('dashboard').listen('.dashboard.updated', handleReportUpdate);
+        } catch (e) {
+            // Keep reports functional even if Echo is unavailable.
+        }
     }
 });
 </script>

@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\SubTask;
 use App\Models\Task;
 use App\Models\TaskComment;
 use App\Models\User;
@@ -7,6 +8,7 @@ use App\Mail\TaskCommentMail;
 use Carbon\Carbon;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schedule;
 
@@ -113,4 +115,84 @@ Artisan::command('tasks:send-overdue-reminders', function () {
     return 0;
 })->purpose('Post one overdue reminder comment per overdue task each day');
 
+Artisan::command('tasks:send-unapproved-subtask-reminders', function () {
+    $today = Carbon::today();
+
+    $approvalComments = TaskComment::with(['task.project.client', 'user'])
+        ->where('type', 'like', 'subtask_approval:%')
+        ->orderBy('updated_at')
+        ->get();
+
+    $latestPendingComments = [];
+    foreach ($approvalComments as $comment) {
+        if (!preg_match('/^subtask_approval:(\d+):(pending|completed)$/i', (string) $comment->type, $matches)) {
+            continue;
+        }
+
+        $subTaskId = (int) $matches[1];
+        $status = strtolower($matches[2]);
+        $current = $latestPendingComments[$subTaskId] ?? null;
+
+        if ($current && !$comment->updated_at->gt($current->updated_at)) {
+            continue;
+        }
+
+        if ($status === 'completed') {
+            unset($latestPendingComments[$subTaskId]);
+            continue;
+        }
+
+        $latestPendingComments[$subTaskId] = $comment;
+    }
+
+    if (empty($latestPendingComments)) {
+        $this->info('No pending subtask approvals found.');
+        return 0;
+    }
+
+    $subTasks = SubTask::with(['task.project.client'])
+        ->whereIn('id', array_keys($latestPendingComments))
+        ->get()
+        ->keyBy('id');
+
+    $sent = 0;
+    $skipped = 0;
+
+    foreach ($latestPendingComments as $subTaskId => $comment) {
+        $subTask = $subTasks->get($subTaskId);
+        $task = $comment->task;
+        $project = $task ? $task->project : null;
+        $client = $project ? $project->client : null;
+
+        if (!$subTask || !$task || !$project || !$client || !$client->email) {
+            $skipped++;
+            continue;
+        }
+
+        if ((bool) $subTask->is_completed || !(bool) $task->comment_email_enabled) {
+            $skipped++;
+            continue;
+        }
+
+        $cacheKey = 'subtask-approval-reminder:' . $today->toDateString() . ':' . $subTaskId;
+        if (Cache::has($cacheKey)) {
+            $skipped++;
+            continue;
+        }
+
+        try {
+            $taskUrl = url('/client/projects/' . $project->id . '#task-wrapper-' . $task->id);
+            Mail::to($client->email)->send(new TaskCommentMail($comment, $taskUrl));
+            Cache::put($cacheKey, true, $today->copy()->endOfDay());
+            $sent++;
+        } catch (\Throwable $e) {
+            $skipped++;
+        }
+    }
+
+    $this->info("Unapproved subtask emails sent: {$sent}; skipped: {$skipped}.");
+    return 0;
+})->purpose('Send one daily email to the client for each pending subtask approval');
+
 Schedule::command('tasks:send-overdue-reminders')->dailyAt('08:00');
+Schedule::command('tasks:send-unapproved-subtask-reminders')->dailyAt('09:00');

@@ -77,6 +77,10 @@ class DashboardController extends Controller
             ->where('progress', '<', 100)
             ->count();
         $completionRate = $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100) : 0;
+        $overdueProjects = Project::whereIn('id', $myProjectIds)
+            ->where('status', '!=', 'completed')
+            ->whereDate('end_date', '<', $today)
+            ->count();
         $activeProjects = Project::whereIn('id', $myProjectIds)->where('status', '!=', 'completed')->count();
 
         return [
@@ -86,6 +90,13 @@ class DashboardController extends Controller
                 'color' => $overdueTasks > 0 ? 'red' : 'green',
                 'url'   => route('projects.index'),
                 'note'  => 'Needs immediate attention',
+            ],
+            [
+                'title' => 'Overdue Projects',
+                'value' => $overdueProjects,
+                'color' => $overdueProjects > 0 ? 'red' : 'green',
+                'url'   => route('dm.projects'),
+                'note'  => 'Your projects past end date',
             ],
             [
                 'title' => 'Tasks Near Deadline',
@@ -205,7 +216,8 @@ class DashboardController extends Controller
                 'label'    => 'Info',
                 'color'    => 'blue',
                 'headline' => 'Recent progress updates',
-                'details'  => $recentUpdates->map(fn ($item) => $item['title'] . ': ' . $item['details'])->take(3)->implode(' · ') ?: 'No recent updates',
+                'details'  => $recentUpdates->count() . ' update(s) from your latest tasks',
+                'items'    => $recentUpdates->values(),
             ],
         ];
     }
@@ -229,6 +241,10 @@ class DashboardController extends Controller
     {
         $totalProjects   = $myProjectIds->count();
         $activeProjects  = Project::whereIn('id', $myProjectIds)->where('status', 'active')->count();
+        $overdueProjects = Project::whereIn('id', $myProjectIds)
+            ->where('status', '!=', 'completed')
+            ->whereDate('end_date', '<', $today)
+            ->count();
         $totalTasks      = Task::whereIn('project_id', $myProjectIds)->count();
         $completedTasks  = Task::whereIn('project_id', $myProjectIds)
             ->where(function ($q) {
@@ -265,6 +281,13 @@ class DashboardController extends Controller
                 'color' => 'green',
                 'url'   => route('client.projects'),
                 'note'  => 'Currently in progress',
+            ],
+            [
+                'title' => 'Overdue Projects',
+                'value' => $overdueProjects,
+                'color' => $overdueProjects > 0 ? 'red' : 'green',
+                'url'   => route('client.projects'),
+                'note'  => 'Past end date and still open',
             ],
             [
                 'title' => 'Tasks In Progress',
@@ -353,7 +376,8 @@ class DashboardController extends Controller
                 'label'    => 'Info',
                 'color'    => 'blue',
                 'headline' => 'Recent team activity',
-                'details'  => $recentComments->map(fn ($c) => $c['title'])->implode(' · ') ?: 'No recent comments',
+                'details'  => $recentComments->count() . ' recent team update(s)',
+                'items'    => $recentComments->values(),
             ],
         ];
     }
@@ -377,6 +401,11 @@ class DashboardController extends Controller
 
     private function buildKpiCards(Carbon $today, $myProjectIds)
     {
+        $overdueProjects = Project::whereIn('id', $myProjectIds)
+            ->where('status', '!=', 'completed')
+            ->whereDate('end_date', '<', $today)
+            ->count();
+
         $overdueTasks = Task::whereIn('project_id', $myProjectIds)
             ->whereDate('end_date', '<', $today)
             ->where('progress', '<', 100)
@@ -409,6 +438,13 @@ class DashboardController extends Controller
                 'color' => $overdueTasks > 0 ? 'red' : 'green',
                 'url'   => route('pm.tasks.index'),
                 'note'  => 'Needs immediate attention',
+            ],
+            [
+                'title' => 'Overdue Projects',
+                'value' => $overdueProjects,
+                'color' => $overdueProjects > 0 ? 'red' : 'green',
+                'url'   => route('pm.projects'),
+                'note'  => 'Past end date and still open',
             ],
             [
                 'title' => 'Tasks Near Deadline',
@@ -563,7 +599,8 @@ class DashboardController extends Controller
                 'label'    => 'Info',
                 'color'    => 'blue',
                 'headline' => 'Recent critical updates',
-                'details'  => $recentUpdates->map(fn ($item) => $item['title'] . ': ' . $item['details'])->take(3)->implode(' · ') ?: 'No recent updates',
+                'details'  => $recentUpdates->count() . ' update(s) from latest progress logs',
+                'items'    => $recentUpdates->values(),
             ],
         ];
     }
@@ -741,9 +778,6 @@ class DashboardController extends Controller
             ->whereHas('task', fn ($q) => $q->whereIn('project_id', $myProjectIds))
             ->orderByDesc('updated_at')
             ->get()
-            ->filter(function ($subTask) use ($approvalStatusBySubTask) {
-                return isset($approvalStatusBySubTask[$subTask->id]);
-            })
             ->map(function ($subTask) use ($approvalStatusBySubTask, $projectShowRoute) {
                 $approvalState = $approvalStatusBySubTask[$subTask->id] ?? null;
                 $isCompleted = (bool) $subTask->is_completed || ($approvalState['status'] ?? 'pending') === 'completed';

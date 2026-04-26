@@ -33,8 +33,8 @@ class ReportController extends Controller
                 )->count();
 
                 $overdueProjects = $projects->filter(function ($p) use ($today) {
-                    $allComplete = $p->tasks->isNotEmpty() && $p->tasks->every(fn($t) => $t->progress >= 100);
-                    return $p->end_date && Carbon::parse($p->end_date)->lt($today) && ! $allComplete;
+                    $isCompleted = strtolower((string) ($p->status ?? '')) === 'completed';
+                    return $p->end_date && Carbon::parse($p->end_date)->lt($today) && ! $isCompleted;
                 })->count();
 
                 $taskIds        = $allTasks->pluck('id');
@@ -45,12 +45,14 @@ class ReportController extends Controller
                 $taskDelayRate   = $totalTasks > 0 ? round(($overdueTasks / $totalTasks) * 100) : 0;
                 $onTimeRate      = max(0, 100 - $taskDelayRate);
 
-                // Risk score 0–10
-                $riskScore = min(10, round(
-                    ($totalTasks   > 0 ? ($overdueTasks    / $totalTasks)   * 5 : 0) +
-                    ($totalTasks   > 0 ? min(3, ($timelineChanges / max(1, $totalTasks)) * 3) : 0) +
-                    ($totalProjects > 0 ? ($overdueProjects / $totalProjects) * 2 : 0)
-                , 1));
+                // Risk score 0-10 (overdue projects carry heavier weight)
+                $riskScore = $this->calculatePmRiskScore(
+                    $totalTasks,
+                    $overdueTasks,
+                    $timelineChanges,
+                    $totalProjects,
+                    $overdueProjects
+                );
 
                 return compact(
                     'pm', 'totalProjects', 'overdueProjects',
@@ -321,18 +323,20 @@ class ReportController extends Controller
             $totalTasks      = $allTasks->count();
             $overdueTasks    = $allTasks->filter(fn($t) => $t->end_date && Carbon::parse($t->end_date)->lt($today) && $t->progress < 100)->count();
             $overdueProjects = $projects->filter(function ($p) use ($today) {
-                $allComplete = $p->tasks->isNotEmpty() && $p->tasks->every(fn($t) => $t->progress >= 100);
-                return $p->end_date && Carbon::parse($p->end_date)->lt($today) && ! $allComplete;
+                $isCompleted = strtolower((string) ($p->status ?? '')) === 'completed';
+                return $p->end_date && Carbon::parse($p->end_date)->lt($today) && ! $isCompleted;
             })->count();
             $taskIds         = $allTasks->pluck('id');
             $timelineChanges = $taskIds->isNotEmpty() ? ProgressLog::whereIn('reference_id', $taskIds)->where('type', 'task')->count() : 0;
             $taskDelayRate   = $totalTasks > 0 ? round(($overdueTasks / $totalTasks) * 100) : 0;
             $onTimeRate      = max(0, 100 - $taskDelayRate);
-            $riskScore       = min(10, round(
-                ($totalTasks > 0    ? ($overdueTasks / $totalTasks)       * 5 : 0) +
-                ($totalTasks > 0    ? min(3, ($timelineChanges / max(1, $totalTasks)) * 3) : 0) +
-                ($totalProjects > 0 ? ($overdueProjects / $totalProjects) * 2 : 0)
-            , 1));
+            $riskScore       = $this->calculatePmRiskScore(
+                $totalTasks,
+                $overdueTasks,
+                $timelineChanges,
+                $totalProjects,
+                $overdueProjects
+            );
 
             $kpis = compact('totalProjects', 'overdueProjects', 'totalTasks', 'overdueTasks',
                             'taskDelayRate', 'onTimeRate', 'timelineChanges', 'riskScore');
@@ -445,6 +449,21 @@ class ReportController extends Controller
         }
 
         return $approvalStatusBySubTask;
+    }
+
+    private function calculatePmRiskScore(
+        int $totalTasks,
+        int $overdueTasks,
+        int $timelineChanges,
+        int $totalProjects,
+        int $overdueProjects
+    ): float {
+        $taskRisk = $totalTasks > 0 ? ($overdueTasks / $totalTasks) * 4 : 0;
+        $timelineRisk = $totalTasks > 0 ? min(2.5, ($timelineChanges / max(1, $totalTasks)) * 2.5) : 0;
+        $overdueProjectRisk = $totalProjects > 0 ? ($overdueProjects / $totalProjects) * 3.5 : 0;
+        $overdueProjectPenalty = $overdueProjects > 0 ? min(2.5, $overdueProjects * 0.8) : 0;
+
+        return min(10, round($taskRisk + $timelineRisk + $overdueProjectRisk + $overdueProjectPenalty, 1));
     }
 
     private function buildClientApprovalMetrics(

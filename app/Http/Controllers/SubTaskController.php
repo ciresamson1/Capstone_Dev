@@ -6,6 +6,7 @@ use App\Events\DashboardUpdated;
 use App\Events\SubTaskChanged;
 use App\Events\TaskCommentCreated;
 use App\Models\ActivityLog;
+use App\Models\Project;
 use App\Models\SubTask;
 use App\Models\Task;
 use App\Models\TaskComment;
@@ -115,6 +116,53 @@ class SubTaskController extends Controller
             ],
             'approval_comment' => $this->serializeComment($approvalComment),
         ]);
+    }
+
+    public function snapshot(Project $project)
+    {
+        $approvalMap = TaskComment::where('type', 'like', 'subtask_approval:%')
+            ->whereHas('task', fn ($query) => $query->where('project_id', $project->id))
+            ->get(['task_id', 'type', 'updated_at'])
+            ->reduce(function ($carry, $comment) {
+                if (!preg_match('/^subtask_approval:(\d+):(pending|completed)$/i', (string) $comment->type, $matches)) {
+                    return $carry;
+                }
+
+                $subTaskId = (int) $matches[1];
+                $status = strtolower($matches[2]);
+                $current = $carry[$subTaskId] ?? null;
+
+                if (!$current || $comment->updated_at->gt($current['updated_at'])) {
+                    $carry[$subTaskId] = [
+                        'status' => $status,
+                        'updated_at' => $comment->updated_at,
+                    ];
+                }
+
+                return $carry;
+            }, []);
+
+        $subTasks = SubTask::whereHas('task', fn ($query) => $query->where('project_id', $project->id))
+            ->orderBy('id')
+            ->get()
+            ->map(function ($subTask) use ($approvalMap) {
+                $isCompleted = (bool) $subTask->is_completed || (($approvalMap[$subTask->id]['status'] ?? 'pending') === 'completed');
+
+                return [
+                    'id' => $subTask->id,
+                    'task_id' => $subTask->task_id,
+                    'unique_code' => $subTask->unique_code,
+                    'title' => $subTask->title,
+                    'description' => $subTask->description,
+                    'start_date' => $subTask->start_date ? \Carbon\Carbon::parse($subTask->start_date)->toDateString() : null,
+                    'end_date' => $subTask->end_date ? \Carbon\Carbon::parse($subTask->end_date)->toDateString() : null,
+                    'is_completed' => $isCompleted,
+                    'updated_at' => optional($subTask->updated_at)->toISOString(),
+                ];
+            })
+            ->values();
+
+        return response()->json($subTasks);
     }
 
     public function resend(Request $request, Task $task)

@@ -2,33 +2,34 @@
 
 return [
 
-'default' => env('BROADCAST_CONNECTION', 'null'),
+	'default' => env('BROADCAST_CONNECTION', 'null'),
 
-'connections' => [
+	'connections' => [
 
-'pusher' => [
-'driver' => 'pusher',
-'key' => env('PUSHER_APP_KEY'),
-'secret' => env('PUSHER_APP_SECRET'),
-'app_id' => env('PUSHER_APP_ID'),
-'options' => [
-'cluster' => env('PUSHER_APP_CLUSTER'),
-'useTLS' => false,
-'host' => env('PUSHER_HOST', '127.0.0.1'),
-'port' => env('PUSHER_PORT', 6001),
-'scheme' => env('PUSHER_SCHEME', 'http'),
-'encrypted' => false,
-],
-],
+		'pusher' => [
+			'driver' => 'pusher',
+			'key' => env('PUSHER_APP_KEY'),
+			'secret' => env('PUSHER_APP_SECRET'),
+			'app_id' => env('PUSHER_APP_ID'),
+			'options' => array_filter([
+				'cluster' => env('PUSHER_APP_CLUSTER'),
+				'useTLS' => env('PUSHER_SCHEME', 'https') === 'https',
+				// Keep host/port optional so managed Pusher can use cluster routing.
+				'host' => env('PUSHER_HOST') ?: null,
+				'port' => env('PUSHER_PORT') ?: null,
+				'scheme' => env('PUSHER_SCHEME', 'https'),
+				'encrypted' => env('PUSHER_SCHEME', 'https') === 'https',
+			], fn ($value) => !is_null($value) && $value !== ''),
+		],
 
-'log' => [
-'driver' => 'log',
-],
+		'log' => [
+			'driver' => 'log',
+		],
 
-'null' => [
-'driver' => 'null',
-],
+		'null' => [
+			'driver' => 'null',
+		],
 
-],
+	],
 
 ];

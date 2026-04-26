@@ -6,7 +6,7 @@ use App\Models\Project;
 use App\Models\SubTask;
 use App\Models\Task;
 use App\Models\TaskComment;
-use App\Models\ProgressLog;
+use App\Models\ActivityLog;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -66,6 +66,10 @@ class AdminDashboardController extends Controller
 
     private function buildKpiCards(Carbon $today)
     {
+        $overdueProjects = Project::whereDate('end_date', '<', $today)
+            ->where('status', '!=', 'completed')
+            ->count();
+
         $totalTasks = Task::count();
         $completedTasks = Task::where('progress', 100)->count();
         $overdueTasks = Task::whereDate('end_date', '<', $today)
@@ -100,6 +104,13 @@ class AdminDashboardController extends Controller
                 'color' => 'red',
                 'url' => route('admin.tasks.index'),
                 'note' => 'Needs immediate attention',
+            ],
+            [
+                'title' => 'Overdue Projects',
+                'value' => $overdueProjects,
+                'color' => $overdueProjects > 0 ? 'red' : 'green',
+                'url' => route('projects.index'),
+                'note' => 'Past end date and still open',
             ],
             [
                 'title' => 'Tasks Near Deadline',
@@ -211,14 +222,14 @@ class AdminDashboardController extends Controller
             ])
             ->values();
 
-        $recentUpdates = ProgressLog::with('user')
+        $recentUpdates = ActivityLog::with('user')
             ->latest()
             ->take(4)
             ->get()
             ->map(function ($log) {
                 return [
-                    'title' => Str::title($log->type) . ' update',
-                    'details' => sprintf('%s → %s by %s', $log->old_progress, $log->new_progress, $log->user?->name ?? 'System'),
+                    'title' => Str::title(str_replace('_', ' ', (string) $log->action)),
+                    'details' => trim(($log->description ?? 'No description') . ' by ' . ($log->user?->name ?? 'System')),
                     'time' => $log->created_at->diffForHumans(),
                 ];
             });
@@ -249,7 +260,8 @@ class AdminDashboardController extends Controller
                 'label' => 'Info',
                 'color' => 'blue',
                 'headline' => 'Recent critical updates',
-                'details' => $recentUpdates->map(fn ($item) => $item['title'] . ': ' . $item['details'])->take(3)->implode(' · '),
+                'details' => $recentUpdates->count() . ' update(s) from latest activity',
+                'items' => $recentUpdates->values(),
             ],
         ];
     }
@@ -341,7 +353,7 @@ class AdminDashboardController extends Controller
 
     private function buildTeamPerformance(Carbon $today)
     {
-        $users = User::whereIn('role', ['admin', 'pm', 'dm'])->get();
+        $users = User::whereIn('role', ['admin', 'pm', 'special_pm', 'dm', 'client'])->get();
 
         $performance = $users->map(function ($user) use ($today) {
             $completed = $user->tasks()->where('progress', 100)->count();
@@ -420,9 +432,6 @@ class AdminDashboardController extends Controller
         $approvalCards = SubTask::with(['task.project'])
             ->orderByDesc('updated_at')
             ->get()
-            ->filter(function ($subTask) use ($approvalStatusBySubTask) {
-                return isset($approvalStatusBySubTask[$subTask->id]);
-            })
             ->map(function ($subTask) use ($approvalStatusBySubTask) {
                 $approvalState = $approvalStatusBySubTask[$subTask->id] ?? null;
                 $isCompleted = (bool) $subTask->is_completed || ($approvalState['status'] ?? 'pending') === 'completed';

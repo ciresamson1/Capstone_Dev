@@ -7,6 +7,8 @@ use App\Models\ActivityLog;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\User;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
 class ProjectController extends Controller
@@ -78,7 +80,7 @@ class ProjectController extends Controller
     {
         request()->validate([
             'name'        => 'required|string|max:255',
-            'description' => 'required|string',
+            'description' => 'nullable|string',
             'start_date'  => 'required|date',
             'end_date'    => 'required|date|after_or_equal:start_date',
         ]);
@@ -88,7 +90,7 @@ class ProjectController extends Controller
             'description' => request('description'),
             'start_date'  => request('start_date'),
             'end_date'    => request('end_date'),
-            'status'      => request('status', 'active'),
+            'status'      => str_replace('-', '_', request('status', 'active')),
             'created_by'  => auth()->id(),
             'client_id'   => request('client_id') ?: null,
         ]);
@@ -178,20 +180,24 @@ class ProjectController extends Controller
 
     public function edit($id)
     {
+        $this->ensureAdminCanEditProjects();
+
         $project = Project::findOrFail($id);
         return redirect()->route('projects.index')->with('editProject', $project->id);
     }
 
     public function update($id)
     {
+        $this->ensureAdminCanEditProjects();
+
         $project = Project::findOrFail($id);
 
         request()->validate([
             'name'        => 'required|string|max:255',
-            'description' => 'required|string',
+            'description' => 'nullable|string',
             'start_date'  => 'required|date',
             'end_date'    => 'required|date|after_or_equal:start_date',
-            'status'      => 'required|in:active,on_hold,completed',
+            'status'      => 'required|in:active,on_hold,completed,on-hold',
         ]);
 
         $project->update([
@@ -199,9 +205,15 @@ class ProjectController extends Controller
             'description' => request('description'),
             'start_date'  => request('start_date'),
             'end_date'    => request('end_date'),
-            'status'      => request('status'),
+            'status'      => str_replace('-', '_', request('status')),
             'client_id'   => request('client_id') ?: null,
         ]);
+
+        ActivityLog::record(
+            'updated_project',
+            'Updated project "' . $project->name . '" [' . $project->unique_id . ']',
+            $project
+        );
 
         Cache::forget('admin_dashboard_data');
         Cache::forget('admin_dashboard_kpi_cards');
@@ -219,7 +231,15 @@ class ProjectController extends Controller
     {
         $project = Project::findOrFail($id);
         $projectId = $project->id;
+        $projectName = $project->name;
+        $projectCode = $project->unique_id;
         $project->delete();
+
+        ActivityLog::record(
+            'deleted_project',
+            'Deleted project "' . $projectName . '" [' . $projectCode . ']',
+            null
+        );
 
         Cache::forget('admin_dashboard_data');
         Cache::forget('admin_dashboard_kpi_cards');
@@ -231,5 +251,41 @@ class ProjectController extends Controller
 
         $redirect = auth()->user()->role === 'pm' ? 'pm.projects' : 'projects.index';
         return redirect()->route($redirect)->with('status', 'Project deleted.');
+    }
+
+    public function markCompleted(Request $request, Project $project)
+    {
+        $this->ensureAdminCanEditProjects();
+
+        if (!$request->boolean('completed')) {
+            return redirect()->route('projects.index');
+        }
+
+        if ($project->status !== 'completed') {
+            $project->update(['status' => 'completed']);
+
+            ActivityLog::record(
+                'updated_project',
+                'Marked project "' . $project->name . '" [' . $project->unique_id . '] as completed',
+                $project
+            );
+
+            Cache::forget('admin_dashboard_data');
+            Cache::forget('admin_dashboard_kpi_cards');
+            Cache::forget('admin_dashboard_chart_data');
+
+            try {
+                broadcast(new DashboardUpdated('project', 'completed', $project->id));
+            } catch (\Throwable $e) {}
+        }
+
+        return redirect()->route('projects.index')->with('status', 'Project marked as completed.');
+    }
+
+    private function ensureAdminCanEditProjects(): void
+    {
+        if (strtolower((string) auth()->user()?->role) !== 'admin') {
+            throw new AuthorizationException('Only admin users can edit projects.');
+        }
     }
 }
